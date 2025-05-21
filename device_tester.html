@@ -50,19 +50,21 @@
             border-right: 1px solid #dee2e6;
             border-bottom: 1px solid #dee2e6;
         }
+        /* Styles for #gridVisualizationContainer moved from inline */
         #gridVisualizationContainer {
-            display: grid;
-            border: 1px solid #ccc;
-            /* width: 100%; /* Default if not overridden by col-md-X */
-            /* height: 300px; /* Example height */
-            position: relative; /* For absolute positioning of the pointer */
+            height: 300px; 
+            width: 100%;
+            display: grid; 
+            border: 1px solid #ccc; 
+            position: relative; 
+            overflow-y: auto; /* Allow vertical scrolling */
         }
         .grid-cell {
             border: 1px solid #eee;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.8em;
+            font-size: 0.7em; /* Adjusted from 0.8em */
             box-sizing: border-box;
         }
         #printerPositionPointer {
@@ -251,7 +253,7 @@
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-12"> <!-- Adjust column width as needed, e.g., col-md-8 offset-md-2 for centering -->
-                                <div id="gridVisualizationContainer" style="height: 300px; width: 100%;">
+                                <div id="gridVisualizationContainer">
                                     <!-- Grid cells will be generated here by JavaScript -->
                                     <div id="printerPositionPointer"></div>
                                 </div>
@@ -1764,46 +1766,18 @@
 
             const { x_min, x_max, y_min, y_max } = printerGridConfig;
 
-            if (currentX !== undefined && currentY !== undefined) {
-                const rangeX = x_max - x_min;
-                const rangeY = y_max - y_min;
-
-                if (rangeX > 0 && rangeY > 0) {
-                    let percentX = ((x_max - parseFloat(currentX)) / rangeX) * 100;
-                    let percentY = ((parseFloat(currentY) - y_min) / rangeY) * 100;
-
-                    console.log("updatePositionPointer: current(X,Y)=", currentX, currentY, "config(minX,maxX,minY,maxY)=", printerGridConfig.x_min, printerGridConfig.x_max, printerGridConfig.y_min, printerGridConfig.y_max, "range(X,Y)=", rangeX, rangeY, "percent(X,Y)=", percentX, percentY);
-
-                    // Clamp values to be within 0-100% to keep pointer within bounds
-                    percentX = Math.max(0, Math.min(100, percentX));
-                    percentY = Math.max(0, Math.min(100, percentY));
-
-                    pointer.style.left = `${percentX}%`;
-                    pointer.style.top = `${percentY}%`;
-                    pointer.style.display = 'block';
-                } else {
-                    pointer.style.display = 'none'; // Hide if range is invalid
-                }
-            } else {
-                pointer.style.display = 'none'; // Hide if coords are undefined
-            }
-
-            // Logic to find and highlight the closest cell
-            if (!printerGridConfig || !printerGridConfig.grid_mapping) {
-                // console.log("updatePositionPointer: printerGridConfig or grid_mapping not available for active cell highlighting.");
-                // Update coordinate spans and return if config not ready (spans are updated below, so just set currentActive to null)
-                currentActiveCellElement = null; 
-            } else {
-                let closestCellData = null;
+            const { x_min, x_max, y_min, y_max } = printerGridConfig; // Ensure these are defined
+            const rangeX = x_max - x_min;
+            const rangeY = y_max - y_min;
+            
+            // First, determine closestCellData (this logic should already be present from previous steps)
+            let closestCellData = null;
+            if (printerGridConfig && printerGridConfig.grid_mapping && currentX !== undefined && currentY !== undefined) {
                 let minDistanceSq = Infinity;
-
                 const physicalX = parseFloat(currentX);
                 const physicalY = parseFloat(currentY);
 
-                if (isNaN(physicalX) || isNaN(physicalY)) {
-                    // console.log("updatePositionPointer: currentX or currentY is not a number for distance calculation.");
-                    closestCellData = null; // Cannot calculate distance
-                } else {
+                if (!isNaN(physicalX) && !isNaN(physicalY)) {
                     for (const cellData of printerGridConfig.grid_mapping) {
                         if (cellData.center_x !== undefined && cellData.center_y !== undefined) {
                             const cX = parseFloat(cellData.center_x);
@@ -1820,36 +1794,89 @@
                         }
                     }
                 }
+            }
+            // End of finding closestCellData
 
-                if (currentActiveCellElement) {
-                    currentActiveCellElement.classList.remove('grid-cell-active');
+            // New logic for pointer positioning based on closestCellData
+            if (closestCellData && closestCellData.center_x !== undefined && closestCellData.center_y !== undefined) {
+                const targetX = parseFloat(closestCellData.center_x);
+                const targetY = parseFloat(closestCellData.center_y);
+
+                if (!isNaN(targetX) && !isNaN(targetY)) {
+                    if (rangeX > 0 && rangeY > 0) {
+                        let percentX_calc = ((x_max - targetX) / rangeX) * 100;
+                        let percentY_calc = ((targetY - y_min) / rangeY) * 100;
+
+                        percentX_calc = Math.max(0, Math.min(100, percentX_calc));
+                        percentY_calc = Math.max(0, Math.min(100, percentY_calc));
+
+                        pointer.style.left = `${percentX_calc}%`;
+                        pointer.style.top = `${percentY_calc}%`;
+                        pointer.style.display = 'block';
+                        // console.log("Pointer positioned by closestCellData: ", closestCellData.grid_number, "at ", percentX_calc, percentY_calc);
+                    } else {
+                        pointer.style.display = 'none'; // Hide pointer if range is invalid
+                    }
+                } else {
+                    pointer.style.display = 'none'; // Hide pointer if target coordinates are not numbers
                 }
+            } else {
+                 // Fallback to raw currentX, currentY if no closest cell or its center is undefined
+                 // This maintains previous pointer behavior if cell snapping isn't possible.
+                if (currentX !== undefined && currentY !== undefined && rangeX > 0 && rangeY > 0) {
+                    let percentX = ((x_max - parseFloat(currentX)) / rangeX) * 100;
+                    let percentY = ((parseFloat(currentY) - y_min) / rangeY) * 100;
+                    
+                    // console.log("updatePositionPointer (fallback): current(X,Y)=", currentX, currentY, "config(minX,maxX,minY,maxY)=", x_min, x_max, y_min, y_max, "range(X,Y)=", rangeX, rangeY, "percent(X,Y)=", percentX, percentY);
 
-                if (closestCellData) {
-                    const activeGridNumber = parseInt(closestCellData.grid_number);
-                    if (activeGridNumber >= 1 && activeGridNumber <= 50) {
-                        const cellSelector = `.grid-cell[data-grid-number="${activeGridNumber}"]`;
-                        const newActiveCellDOMElement = document.querySelector(cellSelector);
-                        if (newActiveCellDOMElement) {
-                            newActiveCellDOMElement.classList.add('grid-cell-active');
-                            currentActiveCellElement = newActiveCellDOMElement;
-                        } else {
-                            currentActiveCellElement = null; 
-                        }
+                    percentX = Math.max(0, Math.min(100, percentX));
+                    percentY = Math.max(0, Math.min(100, percentY));
+
+                    pointer.style.left = `${percentX}%`;
+                    pointer.style.top = `${percentY}%`;
+                    pointer.style.display = 'block';
+                } else {
+                    pointer.style.display = 'none'; // Hide if coords undefined or range invalid
+                }
+            }
+
+            // Logic to highlight the active cell (this should use the same `closestCellData` found above)
+            if (currentActiveCellElement) {
+                currentActiveCellElement.classList.remove('grid-cell-active');
+            }
+
+            if (closestCellData) { // Re-check closestCellData for highlighting part
+                const activeGridNumber = parseInt(closestCellData.grid_number);
+                if (activeGridNumber >= 1 && activeGridNumber <= 50) {
+                    const cellSelector = `.grid-cell[data-grid-number="${activeGridNumber}"]`;
+                    const newActiveCellDOMElement = document.querySelector(cellSelector);
+                    if (newActiveCellDOMElement) {
+                        newActiveCellDOMElement.classList.add('grid-cell-active');
+                        currentActiveCellElement = newActiveCellDOMElement;
                     } else {
                         currentActiveCellElement = null; 
                     }
                 } else {
                     currentActiveCellElement = null; 
                 }
+            } else {
+                currentActiveCellElement = null; 
             }
 
+            // The rest of the function updates coordinate spans with RAW currentX, currentY, currentZ
             xCoordSpan.textContent = currentX !== undefined ? currentX.toFixed(2) : "N/A";
             yCoordSpan.textContent = currentY !== undefined ? currentY.toFixed(2) : "N/A";
             zCoordSpan.textContent = currentZ !== undefined ? currentZ.toFixed(2) : "N/A";
         }
         
         // === 泵功能 ===
+            // if (!printerGridConfig || !printerGridConfig.grid_mapping) {
+            //     // console.log("updatePositionPointer: printerGridConfig or grid_mapping not available for active cell highlighting.");
+            //     // Update coordinate spans and return if config not ready (spans are updated below, so just set currentActive to null)
+            //     currentActiveCellElement = null; 
+            // } else {
+            //     let closestCellData = null;
+            // }
         
         // 初始化泵
         async function initializePump() {
