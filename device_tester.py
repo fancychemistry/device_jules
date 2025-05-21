@@ -45,6 +45,7 @@ from backend.services.adapters.printer_adapter import PrinterAdapter
 from backend.services.adapters.pump_adapter import PumpAdapter
 from backend.services.adapters.relay_adapter import RelayAdapter
 from backend.services.adapters.chi_adapter import CHIAdapter
+from backend.services.experiment_execution_service import ExperimentExecutionService # Added
 
 # 配置日志
 logging.basicConfig(
@@ -208,6 +209,7 @@ devices = {
     "relay": None,    # RelayAdapter
     "chi": None       # CHIAdapter
 }
+experiment_service: Optional[ExperimentExecutionService] = None # Added for ExperimentExecutionService
 # WebSocket监听器实例
 moonraker_listener = None
 
@@ -1764,11 +1766,22 @@ class RelayAdapter:
 # 在启动时初始化WebSocket监听器
 @app.on_event("startup")
 async def startup_event():
-    global moonraker_listener, config
+    global moonraker_listener, config, experiment_service # Added experiment_service
     
     # 先加载配置，确保有正确的Moonraker地址
     load_config()
     logger.info(f"设备测试器启动，已加载配置: Moonraker地址={config['moonraker_addr']}")
+
+    # 实例化 ExperimentExecutionService
+    # broadcaster 和 devices 应该是已经定义好的全局变量
+    # loop 可以通过 asyncio.get_event_loop() 获取
+    try:
+        current_loop = asyncio.get_event_loop()
+        experiment_service = ExperimentExecutionService(broadcaster=broadcaster, devices=devices, loop=current_loop)
+        logger.info("ExperimentExecutionService 已实例化")
+    except Exception as e:
+        logger.error(f"ExperimentExecutionService 实例化失败: {e}", exc_info=True)
+        experiment_service = None # Ensure it's None if instantiation fails
     
     # 初始化WebSocket监听器
     if MoonrakerWebsocketListener is not None:
@@ -1824,4 +1837,129 @@ if __name__ == "__main__":
     print(f"请使用浏览器访问: http://localhost:{port}")
     
     # 启动FastAPI应用
-    uvicorn.run(app, host="0.0.0.0", port=port) 
+    uvicorn.run(app, host="0.0.0.0", port=port)
+
+
+# =========== Experiment Execution Service API Endpoints ===========
+
+class StartExperimentPayload(BaseModel):
+    config_file_path: Optional[str] = "old/experiment_config.json"
+
+@app.post("/api/experiment/start", 
+          summary="启动实验流程",
+          description="根据提供的配置文件路径启动实验。如果未提供路径，则使用默认路径。在启动前会检查核心设备（打印机、泵、CHI）是否已初始化。")
+async def start_experiment_api(payload: StartExperimentPayload = Depends()): # Use Depends for default body if payload can be optional/empty
+    if experiment_service is None:
+        logger.error("/api/experiment/start: Experiment service not initialized.")
+        raise HTTPException(status_code=503, detail="实验服务尚未初始化")
+    
+    # Basic check for some core devices - more robust checks are now in ExperimentExecutionService.start_experiment
+    # This API level check can provide quicker feedback for very common issues.
+    printer_adapter = devices.get("printer")
+    pump_adapter = devices.get("pump")
+    chi_adapter = devices.get("chi")
+
+    printer_ready = printer_adapter and getattr(printer_adapter, 'initialized', False)
+    pump_ready = pump_adapter and getattr(pump_adapter, 'initialized', False)
+    # For CHI, specific check as per prompt, assuming 'chi_setup' indicates readiness
+    chi_ready = chi_adapter and hasattr(chi_adapter, "chi_setup") and chi_adapter.chi_setup is not None
+            
+    if not (printer_ready and pump_ready and chi_ready):
+        missing_devices = []
+        if not printer_ready: missing_devices.append("Printer")
+        if not pump_ready: missing_devices.append("Pump")
+        if not chi_ready: missing_devices.append("CHI")
+        detail_msg = f"请先初始化以下设备: {', '.join(missing_devices)}"
+        logger.warning(f"/api/experiment/start: Core devices not ready. {detail_msg}")
+        raise HTTPException(status_code=400, detail=detail_msg)
+
+    logger.info(f"/api/experiment/start: Attempting to start experiment with config: {payload.config_file_path}")
+    success = await experiment_service.start_experiment(config_file_path=payload.config_file_path)
+    if success:
+        logger.info(f"/api/experiment/start: Experiment started successfully with config: {payload.config_file_path}")
+        return {"message": "实验已成功启动"}
+    else:
+        # start_experiment internal logic should broadcast specific error reasons
+        # This HTTP response is a fallback or summary
+        status = experiment_service.get_status() # Get current status to understand failure better
+        error_detail = "实验启动失败。原因可能为: 配置加载问题, 核心设备未就绪, 或实验已在运行。请检查服务日志和设备状态获取详情。"
+        if status.get("is_running"): # Check if it failed because it's already running
+             error_detail = "实验启动失败: 实验已经在运行中。"
+        logger.error(f"/api/experiment/start: Failed to start experiment. Current status: {status}")
+        raise HTTPException(status_code=400, detail=error_detail)
+
+@app.post("/api/experiment/stop", 
+          summary="停止当前实验",
+          description="立即停止当前正在运行的实验流程。如果无实验运行，则不执行任何操作。")
+async def stop_experiment_api():
+    if experiment_service is None:
+        logger.error("/api/experiment/stop: Experiment service not initialized.")
+        raise HTTPException(status_code=503, detail="实验服务尚未初始化")
+    
+    logger.info("/api/experiment/stop: Received request to stop experiment.")
+    await experiment_service.stop_experiment()
+    return {"message": "实验已发送停止指令"}
+
+@app.get("/api/experiment/status", 
+         summary="获取当前实验状态",
+         description="返回当前实验的运行状态，包括是否正在运行、当前步骤、总步骤数等信息。")
+async def get_experiment_status_api():
+    if experiment_service is None:
+        logger.error("/api/experiment/status: Experiment service not initialized.")
+        raise HTTPException(status_code=503, detail="实验服务尚未初始化")
+    
+    status = experiment_service.get_status()
+    logger.debug(f"/api/experiment/status: Returning status: {status}")
+    return status
+
+@app.get("/api/experiment/config", 
+         summary="获取当前加载的实验配置",
+         description="返回当前在实验服务中加载的完整实验配置。如果服务中没有配置，则尝试加载默认配置。")
+async def get_experiment_config_api():
+    if experiment_service is None:
+        logger.error("/api/experiment/config (GET): Experiment service not initialized.")
+        raise HTTPException(status_code=503, detail="实验服务尚未初始化")
+    
+    config_data = experiment_service.get_current_config()
+    if config_data:
+        logger.debug("/api/experiment/config (GET): Returning current config.")
+        return config_data
+    else: 
+        logger.info("/api/experiment/config (GET): No config loaded in service. Attempting to load default.")
+        # Try to load default config if not loaded yet.
+        # Note: load_experiment_config is synchronous.
+        # If it needs to be async, ExperimentExecutionService.load_experiment_config should be async
+        # For now, assuming it's okay to call it like this, or it's primarily for initial load.
+        # Consider if this should be an async call if load_experiment_config becomes async.
+        default_config_path = "old/experiment_config.json" # Default path
+        load_success = experiment_service.load_experiment_config(file_path=default_config_path)
+        if load_success:
+            config_data = experiment_service.get_current_config()
+            if config_data:
+                logger.info(f"/api/experiment/config (GET): Default config '{default_config_path}' loaded and returned.")
+                return config_data
+        
+        logger.error("/api/experiment/config (GET): No config loaded and failed to load default.")
+        raise HTTPException(status_code=404, detail="尚未加载实验配置，也无法加载默认配置。")
+
+@app.post("/api/experiment/config", 
+          summary="更新实验配置",
+          description="更新实验服务中的当前实验配置。如果实验正在运行，则无法更新。更新后的配置会保存到其原始加载路径（如果存在）。")
+async def update_experiment_config_api(new_config: Dict[str, Any]):
+    if experiment_service is None:
+        logger.error("/api/experiment/config (POST): Experiment service not initialized.")
+        raise HTTPException(status_code=503, detail="实验服务尚未初始化")
+    
+    logger.info("/api/experiment/config (POST): Received request to update experiment config.")
+    success = await experiment_service.update_experiment_config(new_config)
+    if success:
+        logger.info("/api/experiment/config (POST): Experiment config updated successfully.")
+        return {"message": "实验配置已更新"}
+    else:
+        # update_experiment_config internal logic should broadcast specific error reasons
+        status = experiment_service.get_status()
+        error_detail = "配置更新失败。原因可能为: 实验正在进行中, 保存文件IO错误, 或配置内容无效。请检查服务日志。"
+        if status.get("is_running"):
+            error_detail = "配置更新失败: 实验正在进行中。请先停止实验。"
+        logger.error(f"/api/experiment/config (POST): Failed to update config. Current status: {status}")
+        raise HTTPException(status_code=400, detail=error_detail)

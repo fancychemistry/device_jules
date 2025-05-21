@@ -1,0 +1,97 @@
+{
+    "project_name": "TestProject",
+    "results_dir": "test_results_integration",
+    "moonraker_addr": "http://localhost:7125", 
+    "chi_software_path": "C:/CHI/dummy.exe",
+    "configurations": {
+        "target_grid_pos": 5,
+        "sample_volume": 0.5,
+        "log_message_template": "Logging from sequence with context: {{ current_voltage }}"
+    },
+    "pump_klipper_params": {
+        "P": "/dev/ttyUSB0",
+        "U": 1
+    },
+    "valve_klipper_relay_id": 1,
+    "voltage_definition": {
+        "type": "list",
+        "values": [-0.1, -0.2, -0.3]
+    },
+    "voltage_range": [0.1, 0.3], 
+    "output_positions": {
+        "pos1": {"x": 10, "y": 10, "z": 5},
+        "pos2": {"x": 20, "y": 20, "z": 5}
+    },
+    "sub_sequences": {
+        "example_sub_sequence": {
+            "description": "An example sub-sequence",
+            "actions": [
+                {"id": "log_sub_1", "type": "log_message", "params": {"message": "Executing example_sub_sequence step 1"}}
+            ]
+        },
+        "simple_log_loop": {
+            "description": "Loop for voltage sweep logging",
+            "actions": [
+                {"id": "log_volt_pos", "type": "log_message", "params": {"message": "Voltage: {{ current_voltage }}, Pos: {{ current_output_position }}, Index: {{ voltage_loop_index }}"}}
+            ]
+        }
+    },
+    "experiment_sequence": [
+        {
+            "id": "init_home",
+            "type": "printer_home",
+            "description": "Initial printer homing",
+            "params": {"axis": "xyz"}
+        },
+        {
+            "id": "move_to_grid",
+            "type": "move_printer_grid", 
+            "description": "Move to configured grid position",
+            "params": {"grid_num_key": "configurations.target_grid_pos", "z_offset": 2}
+        },
+        {
+            "id": "set_main_valve",
+            "type": "set_valve",
+            "description": "Set main valve position",
+            "params": {"relay_id_key": "valve_klipper_relay_id", "state": true, "valve_type": "klipper_relay"}
+        },
+        {
+            "id": "pump_main_sample",
+            "type": "pump_liquid",
+            "description": "Pump main sample volume",
+            "params": {"volume_ml_key": "configurations.sample_volume", "pump_speed_key": "configurations.default_pump_speed", "direction": 1}
+        },
+        {
+            "id": "cv_measure_1",
+            "type": "chi_measurement",
+            "description": "Run a CV Test",
+            "params": {
+                "chi_method": "CV", 
+                "chi_params": {"ei": 0, "v": 0.1, "cl": 1}, 
+                "file_name": "{{ project_name }}_test_CV.txt"
+            }
+        },
+        {
+            "id": "wait_short",
+            "type": "wait",
+            "description": "Short wait",
+            "params": {"seconds": 0.05} 
+        },
+        {
+            "id": "voltage_iteration_1",
+            "type": "voltage_loop",
+            "description": "Iterate through voltages and log",
+            "params": {
+                "voltage_definition": {"type": "list", "values": [-0.5, -0.6]},
+                "loop_sequence_id": "simple_log_loop",
+                "output_positions_source": {"type": "list_literal", "values": ["pos1", "pos2"]}
+            }
+        },
+        {
+            "id": "sub_seq_call",
+            "type": "sequence",
+            "description": "Call a sub-sequence",
+            "params": {"name_in_sub_sequences": "example_sub_sequence"}
+        }
+    ]
+}
