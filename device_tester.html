@@ -251,7 +251,7 @@
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-12"> <!-- Adjust column width as needed, e.g., col-md-8 offset-md-2 for centering -->
-                                <div id="gridVisualizationContainer" style="height: 300px; width: 100%;">
+                                <div id="gridVisualizationContainer" style="height: 500px; width: 100%;">
                                     <!-- Grid cells will be generated here by JavaScript -->
                                     <div id="printerPositionPointer"></div>
                                 </div>
@@ -1769,10 +1769,13 @@
                 const rangeY = y_max - y_min;
 
                 if (rangeX > 0 && rangeY > 0) {
-                    let percentX = ((x_max - parseFloat(currentX)) / rangeX) * 100;
+                    let percentX = ((parseFloat(currentX) - x_min) / rangeX) * 100;
                     let percentY = ((parseFloat(currentY) - y_min) / rangeY) * 100;
 
                     console.log("updatePositionPointer: current(X,Y)=", currentX, currentY, "config(minX,maxX,minY,maxY)=", printerGridConfig.x_min, printerGridConfig.x_max, printerGridConfig.y_min, printerGridConfig.y_max, "range(X,Y)=", rangeX, rangeY, "percent(X,Y)=", percentX, percentY);
+                    // console.log(`Pointer Update: currentX=${currentX}, currentY=${currentY}, currentZ=${currentZ}`);
+                    // console.log(`Grid Config: x_min=${x_min}, x_max=${x_max}, y_min=${y_min}, y_max=${y_max}`);
+                    // console.log(`Calculated: percentX=${percentX}, percentY=${percentY}`);
 
                     // Clamp values to be within 0-100% to keep pointer within bounds
                     percentX = Math.max(0, Math.min(100, percentX));
