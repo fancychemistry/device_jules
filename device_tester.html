@@ -56,14 +56,17 @@
             /* width: 100%; /* Default if not overridden by col-md-X */
             /* height: 300px; /* Example height */
             position: relative; /* For absolute positioning of the pointer */
+            padding: 10px;
+            box-sizing: border-box;
         }
         .grid-cell {
             border: 1px solid #eee;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.8em;
+            font-size: 0.7em;
             box-sizing: border-box;
+            padding: 3px;
         }
         #printerPositionPointer {
             position: absolute;
@@ -1762,21 +1765,53 @@
                 return;
             }
 
-            const { x_min, x_max, y_min, y_max } = printerGridConfig;
+            // const { x_min, x_max, y_min, y_max } = printerGridConfig; // Original global config
+            let actual_x_min = Infinity, actual_x_max = -Infinity, actual_y_min = Infinity, actual_y_max = -Infinity;
+
+            if (printerGridConfig && printerGridConfig.grid_mapping) {
+                for (const cellData of printerGridConfig.grid_mapping) {
+                    const gridNum = parseInt(cellData.grid_number);
+                    // Consider only the numbered circles 1-50 for the bounding box
+                    if (gridNum >= 1 && gridNum <= 50 && cellData.center_x !== undefined && cellData.center_y !== undefined) {
+                        const cx = parseFloat(cellData.center_x);
+                        const cy = parseFloat(cellData.center_y);
+                        if (!isNaN(cx)) {
+                            if (cx < actual_x_min) actual_x_min = cx;
+                            if (cx > actual_x_max) actual_x_max = cx;
+                        }
+                        if (!isNaN(cy)) {
+                            if (cy < actual_y_min) actual_y_min = cy;
+                            if (cy > actual_y_max) actual_y_max = cy;
+                        }
+                    }
+                }
+            }
+
+            // Fallback if no valid cells were found, to prevent division by zero or NaN issues
+            if (actual_x_min === Infinity || actual_x_max === -Infinity || actual_y_min === Infinity || actual_y_max === -Infinity) {
+                // Use the original global config values as a fallback
+                actual_x_min = printerGridConfig.x_min;
+                actual_x_max = printerGridConfig.x_max;
+                actual_y_min = printerGridConfig.y_min;
+                actual_y_max = printerGridConfig.y_max;
+                console.warn("Pointer Update: Using global x/y min/max due to no valid numbered cells for bounds.");
+            } else {
+                console.log(`Pointer Update: Calculated bounds for circles 1-50: x[${actual_x_min}-${actual_x_max}], y[${actual_y_min}-${actual_y_max}]`);
+            }
 
             if (currentX !== undefined && currentY !== undefined) {
-                const rangeX = x_max - x_min;
-                const rangeY = y_max - y_min;
+                const rangeX = actual_x_max - actual_x_min;
+                const rangeY = actual_y_max - actual_y_min;
 
                 if (rangeX > 0 && rangeY > 0) {
-                    let percentX = ((parseFloat(currentX) - x_min) / rangeX) * 100;
-                    let percentY = ((parseFloat(currentY) - y_min) / rangeY) * 100;
+                    let percentX = ((parseFloat(currentX) - actual_x_min) / rangeX) * 100;
+                    let percentY = ((parseFloat(currentY) - actual_y_min) / rangeY) * 100;
 
-                    console.log("updatePositionPointer: current(X,Y)=", currentX, currentY, "config(minX,maxX,minY,maxY)=", printerGridConfig.x_min, printerGridConfig.x_max, printerGridConfig.y_min, printerGridConfig.y_max, "range(X,Y)=", rangeX, rangeY, "percent(X,Y)=", percentX, percentY);
+                    console.log("updatePositionPointer: current(X,Y)=", currentX, currentY, "config(minX,maxX,minY,maxY)=", actual_x_min, actual_x_max, actual_y_min, actual_y_max, "range(X,Y)=", rangeX, rangeY, "percent(X,Y)=", percentX, percentY);
                     // console.log(`Pointer Update: currentX=${currentX}, currentY=${currentY}, currentZ=${currentZ}`);
-                    // console.log(`Grid Config: x_min=${x_min}, x_max=${x_max}, y_min=${y_min}, y_max=${y_max}`);
+                    // console.log(`Grid Config: x_min=${actual_x_min}, x_max=${actual_x_max}, y_min=${actual_y_min}, y_max=${actual_y_max}`); // Updated to actual
                     // console.log(`Calculated: percentX=${percentX}, percentY=${percentY}`);
-
+                    
                     // Clamp values to be within 0-100% to keep pointer within bounds
                     percentX = Math.max(0, Math.min(100, percentX));
                     percentY = Math.max(0, Math.min(100, percentY));
