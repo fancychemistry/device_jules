@@ -56,41 +56,33 @@
             /* width: 100%; /* Default if not overridden by col-md-X */
             /* height: 300px; /* Example height */
             position: relative; /* For absolute positioning of the pointer */
+            padding: 30px; /* 修改：进一步增加内边距，让边缘的单元格更远离边框 */
+            box-sizing: border-box;
         }
         .grid-cell {
             border: 1px solid #eee;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.8em;
+            font-size: 0.9em; /* 从0.75em增大到0.9em */
             box-sizing: border-box;
+            padding: 2px;
         }
-        #printerPositionPointer {
-            position: absolute;
-            width: 10px;
-            height: 10px;
-            background-color: red;
-            border-radius: 50%;
-            display: none; /* Initially hidden */
-            transform: translate(-50%, -50%); /* Center the pointer */
-            z-index: 10; /* Ensure it's above grid cells */
-            transition: left 0.3s ease-in-out, top 0.3s ease-in-out; /* Added for smooth animation */
-        }
+        /* #printerPositionPointer 相关样式已移除 */
 
         .grid-cell-numbered-circle {
             border-radius: 50%;
             aspect-ratio: 1;
-            /* Ensure the flex centering from .grid-cell still works well.
-               It might be necessary to also set width/height to 100% of the smaller dimension
-               if aspect-ratio alone doesn't play well with the parent grid's fr units,
-               or adjust how text is centered if it becomes an issue.
-               However, `aspect-ratio: 1;` is the primary change.
-            */
+            transform: scale(0.95); /* 从0.85调整到0.95 */
+            transition: transform 0.2s ease-out; /* 新增：为缩放添加过渡动画 */
         }
 
         .grid-cell-active {
             background-color: green !important; /* Use !important to ensure override if needed */
             color: white; /* For better text readability on green background */
+            transform: scale(1.05); /* 修改/新增：激活时略微放大，或恢复正常大小，覆盖 .grid-cell-numbered-circle 的缩小效果 */
+            box-shadow: 0 0 10px 4px rgba(0, 128, 0, 0.7); /* 新增：为激活单元格添加更明显的阴影 */
+            z-index: 5; /* 确保激活的单元格在最上层，如果缩放导致重叠 */
         }
     </style>
 </head>
@@ -251,9 +243,9 @@
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-12"> <!-- Adjust column width as needed, e.g., col-md-8 offset-md-2 for centering -->
-                                <div id="gridVisualizationContainer" style="height: 300px; width: 100%;">
+                                <div id="gridVisualizationContainer" style="height: 650px; width: 100%;"> {/* 修改：增加容器高度 */}
                                     <!-- Grid cells will be generated here by JavaScript -->
-                                    <div id="printerPositionPointer"></div>
+                                    <!-- <div id="printerPositionPointer"></div>  红色指针元素已移除 -->
                                 </div>
                             </div>
                         </div>
@@ -1611,106 +1603,91 @@
                 log("无法显示网格：容器或配置缺失", "error");
                 return;
             }
-            container.innerHTML = ''; // Clear previous grid cells, keep pointer
-            
-            // Keep the pointer element if it's already there, or create it if it's the first time.
-            let pointer = document.getElementById('printerPositionPointer');
-            if (!pointer) {
-                pointer = document.createElement('div');
-                pointer.id = 'printerPositionPointer';
-                // Styles are set in CSS, but ensure it's appended if created dynamically
-                container.appendChild(pointer);
-            }
+            container.innerHTML = ''; // 清除之前的网格单元
 
-
-            container.style.gridTemplateRows = `repeat(${gridConfig.rows}, 1fr)`;
-            container.style.gridTemplateColumns = `repeat(${gridConfig.cols}, 1fr)`;
-
-            const R = parseInt(gridConfig.rows);
-            const C = parseInt(gridConfig.cols);
-            const totalVisualCells = R * C;
-            const visualCellsDomOrder = new Array(totalVisualCells).fill(null);
-
-            // Sort grid_mapping by grid_number to process them in ascending order
-            const sortedMapping = [...gridConfig.grid_mapping].sort((a, b) => parseInt(a.grid_number) - parseInt(b.grid_number));
-
-            for (const cellData of sortedMapping) {
-                const n = parseInt(cellData.grid_number);
-                if (n >= 1 && n <= 50) {
-                    const zeroBasedN = n - 1;
-                    const targetVisualCol = zeroBasedN % C;
-                    const targetVisualRowFromBottom = Math.floor(zeroBasedN / C);
-                    const targetVisualRowFromTop = R - 1 - targetVisualRowFromBottom;
-                    const domIndex = targetVisualRowFromTop * C + targetVisualCol;
-
-                    if (domIndex >= 0 && domIndex < totalVisualCells) {
-                        if (visualCellsDomOrder[domIndex] === null) {
-                            visualCellsDomOrder[domIndex] = cellData;
-                        } else {
-                            console.warn(`Collision at domIndex ${domIndex} for grid_number ${n}. Existing: ${visualCellsDomOrder[domIndex].grid_number}`);
-                        }
-                    } else {
-                        console.warn(`grid_number ${n} maps to out-of-bounds domIndex ${domIndex}`);
-                    }
-                } else {
-                    // Handle other grid numbers if necessary, or ignore.
-                    // For now, only 1-50 are placed according to the new logic.
-                    // You might want to place them in their original order or a default spot.
-                    // Example: find an empty spot or append at the end, but this is outside current scope.
-                    console.log(`Grid number ${n} is not in the 1-50 range and will not be placed by the new ordering logic.`);
-                }
+            const R = parseInt(gridConfig.rows); // 例如 5
+            const C = parseInt(gridConfig.cols); // 例如 10
+            if (isNaN(R) || isNaN(C) || R <= 0 || C <= 0) {
+                log(`网格配置错误：无效的行数(${R})或列数(${C})`, "error");
+                container.innerHTML = '<p class="text-danger text-center">网格配置错误</p>';
+                return;
             }
             
-            // Fallback for cells not handled by the 1-50 logic (e.g. >50 or non-numeric)
-            // This ensures all cells from sortedMapping are at least attempted to be placed if not already.
+            container.style.gridTemplateRows = `repeat(${R}, 1fr)`;
+            container.style.gridTemplateColumns = `repeat(${C}, 1fr)`;
+
+            const totalVisualCells = R * C; // 例如 50
+            const cellsForDom = new Array(totalVisualCells).fill(null);
+
+            // 按 grid_number 对 mapping进行排序
+            const sortedMapping = [...gridConfig.grid_mapping].sort((a, b) => {
+                const numA = parseInt(a.grid_number);
+                const numB = parseInt(b.grid_number);
+                if (isNaN(numA) && isNaN(numB)) return 0;
+                if (isNaN(numA)) return 1;
+                if (isNaN(numB)) return -1;
+                return numA - numB;
+            });
+
             for (const cellData of sortedMapping) {
-                const n = parseInt(cellData.grid_number);
-                // Check if this cellData was already placed by the 1-50 logic
-                let alreadyPlaced = false;
-                for(let i=0; i<totalVisualCells; i++) {
-                    if(visualCellsDomOrder[i] && visualCellsDomOrder[i].grid_number === cellData.grid_number) {
-                        alreadyPlaced = true;
-                        break;
-                    }
-                }
+                const n = parseInt(cellData.grid_number); // 1-indexed grid number
+                
+                if (!isNaN(n) && n >= 1 && n <= totalVisualCells) {
+                    const zeroBasedN = n - 1; // 0-indexed for calculation
 
-                if (!alreadyPlaced) {
-                    // Find the first available null spot in visualCellsDomOrder for unplaced items
-                    // This is a simple fallback, might not be the desired visual order for these.
-                    const fallbackIndex = visualCellsDomOrder.indexOf(null);
-                    if (fallbackIndex !== -1) {
-                        visualCellsDomOrder[fallbackIndex] = cellData;
-                        console.warn(`Fallback: Placing unhandled grid_number ${n} at domIndex ${fallbackIndex}.`);
-                    } else {
-                        // This case should ideally not happen if totalVisualCells >= sortedMapping.length
-                        // Or it means all visual spots are filled, possibly by 1-50 logic and some fallbacks.
-                        console.warn(`No empty spot for fallback placement of grid_number ${n}. Grid might be full or logic needs review.`);
-                    }
-                }
-            }
+                    // 计算数据中的行列 (0-indexed)
+                    // (数据从左到右，从上到下填充)
+                    const dataCol = zeroBasedN % C; 
+                    const dataRow = Math.floor(zeroBasedN / C); 
 
+                    // 转换为视觉上的行列 (0-indexed)
+                    // 视觉上：1号在左下角, C号在右下角, C+1号在左边第二行底部...
+                    // 视觉列与数据列一致
+                    const visualCol = dataCol;
+                    // 视觉行从下往上 (0-indexed from bottom, so R-1 is the bottom row)
+                    // (R-1) - dataRow maps dataRow=0 (top data row) to visualRow=R-1 (bottom visual row)
+                    const visualRowFromBottom = dataRow; // This is if 1 is top-left
+                    // To make 1 at bottom-left:
+                    // The dataRow for n=1..C is 0. We want this to be visual row R-1 (bottom).
+                    // The dataRow for n=C+1..2C is 1. We want this to be visual row R-2.
+                    // So, visualRow (0-indexed from top) = (R - 1) - dataRow
+                    const visualRowFromTop = (R - 1) - dataRow;
 
-            for (let i = 0; i < totalVisualCells; i++) {
-                const currentCellData = visualCellsDomOrder[i];
-                const cell = document.createElement('div');
-                cell.classList.add('grid-cell');
+                    const domIndex = visualRowFromTop * C + visualCol;
 
-                if (currentCellData) {
-                    cell.textContent = currentCellData.grid_number;
-                    cell.dataset.gridNumber = currentCellData.grid_number;
-                    cell.title = `网格 ${currentCellData.grid_number} (Phys X: ${currentCellData.center_x}, Y: ${currentCellData.center_y})`;
-                    cell.addEventListener('click', handleGridCellClick);
-
-                    const gridNum = parseInt(currentCellData.grid_number);
-                    if (gridNum >= 1 && gridNum <= 50) {
+                    if (domIndex >= 0 && domIndex < totalVisualCells && cellsForDom[domIndex] === null) {
+                        const cell = document.createElement('div');
+                        cell.classList.add('grid-cell');
+                        cell.textContent = cellData.grid_number.toString();
+                        cell.dataset.gridNumber = cellData.grid_number.toString();
+                        cell.title = `网格 ${cellData.grid_number} (Phys X: ${cellData.center_x}, Y: ${cellData.center_y})`;
+                        cell.addEventListener('click', handleGridCellClick);
                         cell.classList.add('grid-cell-numbered-circle');
+                        cellsForDom[domIndex] = cell;
+                    } else {
+                        if (domIndex < 0 || domIndex >= totalVisualCells) {
+                            log(`错误: grid_number ${n} 计算出的 domIndex ${domIndex} 超出范围 [0-${totalVisualCells - 1}]`, "error");
+                        } else if (cellsForDom[domIndex] !== null) {
+                            log(`警告: domIndex ${domIndex} (用于 grid_number ${n}) 已被占用 (已有 ${cellsForDom[domIndex].dataset.gridNumber})。检查 grid_mapping。`, "warn");
+                        }
                     }
-                } else {
-                    cell.textContent = ''; // Empty cell
-                    cell.classList.add('grid-cell-empty'); // Optional: for styling empty cells
+                } else if (!isNaN(n) && (n < 1 || n > totalVisualCells)) {
+                    log(`信息: grid_number ${n} 超出预期范围 [1-${totalVisualCells}]，未放置。`, "info");
                 }
-                container.appendChild(cell);
             }
+
+            // 按计算出的DOM顺序填充容器
+            for (let i = 0; i < totalVisualCells; i++) {
+                if (cellsForDom[i]) {
+                    container.appendChild(cellsForDom[i]);
+                } else {
+                    const emptyCell = document.createElement('div');
+                    emptyCell.classList.add('grid-cell', 'grid-cell-empty');
+                    emptyCell.innerHTML = '&nbsp;'; 
+                    container.appendChild(emptyCell);
+                }
+            }
+            log(`网格已生成: ${R}行 x ${C}列, 视觉上1号在左下角。`, "info");
         }
 
         // 处理网格单元格点击
@@ -1749,104 +1726,86 @@
         
         // 更新位置指针
         function updatePositionPointer(currentX, currentY, currentZ) {
-            const pointer = document.getElementById('printerPositionPointer');
+            // const pointer = document.getElementById('printerPositionPointer'); // 指针元素获取已移除
             const xCoordSpan = document.getElementById('currentXCoord');
             const yCoordSpan = document.getElementById('currentYCoord');
             const zCoordSpan = document.getElementById('currentZCoord');
+            // const container = document.getElementById('gridVisualizationContainer'); // 容器获取不再直接用于指针
 
-            if (!pointer || !printerGridConfig || !printerGridConfig.x_min === undefined) {
-                log("无法更新指针: DOM元素或网格配置未准备好。", "warn");
-                xCoordSpan.textContent = currentX !== undefined ? currentX.toFixed(2) : "N/A";
-                yCoordSpan.textContent = currentY !== undefined ? currentY.toFixed(2) : "N/A";
-                zCoordSpan.textContent = currentZ !== undefined ? currentZ.toFixed(2) : "N/A";
+            // 检查基本DOM元素是否存在
+            if (!xCoordSpan || !yCoordSpan || !zCoordSpan || !printerGridConfig) {
+                log("无法更新坐标显示或活动单元格: 关键DOM元素或网格配置缺失。", "warn");
+                if(xCoordSpan) xCoordSpan.textContent = currentX !== undefined ? currentX.toFixed(2) : "N/A";
+                if(yCoordSpan) yCoordSpan.textContent = currentY !== undefined ? currentY.toFixed(2) : "N/A";
+                if(zCoordSpan) zCoordSpan.textContent = currentZ !== undefined ? currentZ.toFixed(2) : "N/A";
+                return;
+            }
+            
+            // 更新坐标文本显示
+            xCoordSpan.textContent = currentX !== undefined ? currentX.toFixed(2) : "N/A";
+            yCoordSpan.textContent = currentY !== undefined ? currentY.toFixed(2) : "N/A";
+            zCoordSpan.textContent = currentZ !== undefined ? currentZ.toFixed(2) : "N/A";
+
+            // --- 红色指针相关的计算和定位逻辑已完全移除 --- 
+            // (包括 actual_x_min/max, rangeX/Y, containerStyle, padding, containerWidth/Height, contentWidth/Height, normX/Y, pointerContentX/Y, pointerContainerX/Y, percentX/Y 的计算和 pointer.style 的设置)
+
+            // --- 更新激活单元格高亮的逻辑 (保持不变) ---
+            if (!printerGridConfig.grid_mapping) {
+                if (currentActiveCellElement) {
+                    currentActiveCellElement.classList.remove('grid-cell-active');
+                    currentActiveCellElement = null;
+                }
                 return;
             }
 
-            const { x_min, x_max, y_min, y_max } = printerGridConfig;
+            let closestCellData = null;
+            let minDistanceSq = Infinity;
 
-            if (currentX !== undefined && currentY !== undefined) {
-                const rangeX = x_max - x_min;
-                const rangeY = y_max - y_min;
+            const physicalX = parseFloat(currentX);
+            const physicalY = parseFloat(currentY);
 
-                if (rangeX > 0 && rangeY > 0) {
-                    let percentX = ((x_max - parseFloat(currentX)) / rangeX) * 100;
-                    let percentY = ((parseFloat(currentY) - y_min) / rangeY) * 100;
-
-                    console.log("updatePositionPointer: current(X,Y)=", currentX, currentY, "config(minX,maxX,minY,maxY)=", printerGridConfig.x_min, printerGridConfig.x_max, printerGridConfig.y_min, printerGridConfig.y_max, "range(X,Y)=", rangeX, rangeY, "percent(X,Y)=", percentX, percentY);
-
-                    // Clamp values to be within 0-100% to keep pointer within bounds
-                    percentX = Math.max(0, Math.min(100, percentX));
-                    percentY = Math.max(0, Math.min(100, percentY));
-
-                    pointer.style.left = `${percentX}%`;
-                    pointer.style.top = `${percentY}%`;
-                    pointer.style.display = 'block';
-                } else {
-                    pointer.style.display = 'none'; // Hide if range is invalid
-                }
+            if (isNaN(physicalX) || isNaN(physicalY)) {
+                closestCellData = null; 
             } else {
-                pointer.style.display = 'none'; // Hide if coords are undefined
-            }
+                for (const cellData of printerGridConfig.grid_mapping) {
+                    if (cellData.center_x !== undefined && cellData.center_y !== undefined) {
+                        const cX = parseFloat(cellData.center_x);
+                        const cY = parseFloat(cellData.center_y);
+                        if (isNaN(cX) || isNaN(cY)) continue;
 
-            // Logic to find and highlight the closest cell
-            if (!printerGridConfig || !printerGridConfig.grid_mapping) {
-                // console.log("updatePositionPointer: printerGridConfig or grid_mapping not available for active cell highlighting.");
-                // Update coordinate spans and return if config not ready (spans are updated below, so just set currentActive to null)
-                currentActiveCellElement = null; 
-            } else {
-                let closestCellData = null;
-                let minDistanceSq = Infinity;
-
-                const physicalX = parseFloat(currentX);
-                const physicalY = parseFloat(currentY);
-
-                if (isNaN(physicalX) || isNaN(physicalY)) {
-                    // console.log("updatePositionPointer: currentX or currentY is not a number for distance calculation.");
-                    closestCellData = null; // Cannot calculate distance
-                } else {
-                    for (const cellData of printerGridConfig.grid_mapping) {
-                        if (cellData.center_x !== undefined && cellData.center_y !== undefined) {
-                            const cX = parseFloat(cellData.center_x);
-                            const cY = parseFloat(cellData.center_y);
-                            if (isNaN(cX) || isNaN(cY)) continue;
-
-                            const dx = physicalX - cX;
-                            const dy = physicalY - cY;
-                            const distanceSq = dx * dx + dy * dy;
-                            if (distanceSq < minDistanceSq) {
-                                minDistanceSq = distanceSq;
-                                closestCellData = cellData;
-                            }
+                        const dx = physicalX - cX;
+                        const dy = physicalY - cY;
+                        const distanceSq = dx * dx + dy * dy;
+                        if (distanceSq < minDistanceSq) {
+                            minDistanceSq = distanceSq;
+                            closestCellData = cellData;
                         }
                     }
                 }
+            }
 
-                if (currentActiveCellElement) {
-                    currentActiveCellElement.classList.remove('grid-cell-active');
-                }
+            if (currentActiveCellElement) {
+                currentActiveCellElement.classList.remove('grid-cell-active');
+            }
 
-                if (closestCellData) {
-                    const activeGridNumber = parseInt(closestCellData.grid_number);
-                    if (activeGridNumber >= 1 && activeGridNumber <= 50) {
-                        const cellSelector = `.grid-cell[data-grid-number="${activeGridNumber}"]`;
-                        const newActiveCellDOMElement = document.querySelector(cellSelector);
-                        if (newActiveCellDOMElement) {
-                            newActiveCellDOMElement.classList.add('grid-cell-active');
-                            currentActiveCellElement = newActiveCellDOMElement;
-                        } else {
-                            currentActiveCellElement = null; 
-                        }
+            if (closestCellData) {
+                const activeGridNumber = parseInt(closestCellData.grid_number);
+                // 仅当最近的单元格是1-50号之一时才高亮
+                if (activeGridNumber >= 1 && activeGridNumber <= 50) { 
+                    const cellSelector = `.grid-cell[data-grid-number="${activeGridNumber}"]`;
+                    const newActiveCellDOMElement = document.querySelector(cellSelector);
+                    if (newActiveCellDOMElement) {
+                        newActiveCellDOMElement.classList.add('grid-cell-active');
+                        currentActiveCellElement = newActiveCellDOMElement;
                     } else {
                         currentActiveCellElement = null; 
                     }
                 } else {
-                    currentActiveCellElement = null; 
+                    currentActiveCellElement = null; // 如果最近的单元格不在1-50范围内，则不设置高亮
                 }
+            } else {
+                currentActiveCellElement = null; 
             }
-
-            xCoordSpan.textContent = currentX !== undefined ? currentX.toFixed(2) : "N/A";
-            yCoordSpan.textContent = currentY !== undefined ? currentY.toFixed(2) : "N/A";
-            zCoordSpan.textContent = currentZ !== undefined ? currentZ.toFixed(2) : "N/A";
         }
         
         // === 泵功能 ===
