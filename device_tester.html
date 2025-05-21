@@ -75,6 +75,20 @@
             transform: translate(-50%, -50%); /* Center the pointer */
             z-index: 10; /* Ensure it's above grid cells */
         }
+
+        .grid-cell-numbered-circle {
+            border-radius: 50%;
+            /* Ensure cells are somewhat square for a good circle.
+               If grid cells get stretched, width/height or aspect-ratio might be needed,
+               but default 1fr cells in a square-ish grid container usually work.
+               Let's assume they are visually square enough for border-radius to make them circular.
+            */
+        }
+
+        .grid-cell-active {
+            background-color: green !important; /* Use !important to ensure override if needed */
+            color: white; /* For better text readability on green background */
+        }
     </style>
 </head>
 <body>
@@ -1175,6 +1189,7 @@
         // 公共变量
         const apiBaseUrl = '';
         let wsConnection = null;
+        let currentActiveCellElement = null;
         let printerGeneralLimits = null;
         let printerGridConfig = null;
         
@@ -1608,14 +1623,89 @@
             container.style.gridTemplateRows = `repeat(${gridConfig.rows}, 1fr)`;
             container.style.gridTemplateColumns = `repeat(${gridConfig.cols}, 1fr)`;
 
-            for (let i = 0; i < gridConfig.grid_mapping.length; i++) {
-                const cellData = gridConfig.grid_mapping[i];
+            const R = parseInt(gridConfig.rows);
+            const C = parseInt(gridConfig.cols);
+            const totalVisualCells = R * C;
+            const visualCellsDomOrder = new Array(totalVisualCells).fill(null);
+
+            // Sort grid_mapping by grid_number to process them in ascending order
+            const sortedMapping = [...gridConfig.grid_mapping].sort((a, b) => parseInt(a.grid_number) - parseInt(b.grid_number));
+
+            for (const cellData of sortedMapping) {
+                const n = parseInt(cellData.grid_number);
+                if (n >= 1 && n <= 50) {
+                    const zeroBasedN = n - 1;
+                    const targetVisualCol = zeroBasedN % C;
+                    const targetVisualRowFromBottom = Math.floor(zeroBasedN / C);
+                    const targetVisualRowFromTop = R - 1 - targetVisualRowFromBottom;
+                    const domIndex = targetVisualRowFromTop * C + targetVisualCol;
+
+                    if (domIndex >= 0 && domIndex < totalVisualCells) {
+                        if (visualCellsDomOrder[domIndex] === null) {
+                            visualCellsDomOrder[domIndex] = cellData;
+                        } else {
+                            console.warn(`Collision at domIndex ${domIndex} for grid_number ${n}. Existing: ${visualCellsDomOrder[domIndex].grid_number}`);
+                        }
+                    } else {
+                        console.warn(`grid_number ${n} maps to out-of-bounds domIndex ${domIndex}`);
+                    }
+                } else {
+                    // Handle other grid numbers if necessary, or ignore.
+                    // For now, only 1-50 are placed according to the new logic.
+                    // You might want to place them in their original order or a default spot.
+                    // Example: find an empty spot or append at the end, but this is outside current scope.
+                    console.log(`Grid number ${n} is not in the 1-50 range and will not be placed by the new ordering logic.`);
+                }
+            }
+            
+            // Fallback for cells not handled by the 1-50 logic (e.g. >50 or non-numeric)
+            // This ensures all cells from sortedMapping are at least attempted to be placed if not already.
+            for (const cellData of sortedMapping) {
+                const n = parseInt(cellData.grid_number);
+                // Check if this cellData was already placed by the 1-50 logic
+                let alreadyPlaced = false;
+                for(let i=0; i<totalVisualCells; i++) {
+                    if(visualCellsDomOrder[i] && visualCellsDomOrder[i].grid_number === cellData.grid_number) {
+                        alreadyPlaced = true;
+                        break;
+                    }
+                }
+
+                if (!alreadyPlaced) {
+                    // Find the first available null spot in visualCellsDomOrder for unplaced items
+                    // This is a simple fallback, might not be the desired visual order for these.
+                    const fallbackIndex = visualCellsDomOrder.indexOf(null);
+                    if (fallbackIndex !== -1) {
+                        visualCellsDomOrder[fallbackIndex] = cellData;
+                        console.warn(`Fallback: Placing unhandled grid_number ${n} at domIndex ${fallbackIndex}.`);
+                    } else {
+                        // This case should ideally not happen if totalVisualCells >= sortedMapping.length
+                        // Or it means all visual spots are filled, possibly by 1-50 logic and some fallbacks.
+                        console.warn(`No empty spot for fallback placement of grid_number ${n}. Grid might be full or logic needs review.`);
+                    }
+                }
+            }
+
+
+            for (let i = 0; i < totalVisualCells; i++) {
+                const currentCellData = visualCellsDomOrder[i];
                 const cell = document.createElement('div');
                 cell.classList.add('grid-cell');
-                cell.textContent = cellData.grid_number;
-                cell.dataset.gridNumber = cellData.grid_number; // Store grid_number
-                cell.title = `点击移动到网格 ${cellData.grid_number} (X: ${cellData.center_x}, Y: ${cellData.center_y})`;
-                cell.addEventListener('click', handleGridCellClick); // Add click listener
+
+                if (currentCellData) {
+                    cell.textContent = currentCellData.grid_number;
+                    cell.dataset.gridNumber = currentCellData.grid_number;
+                    cell.title = `网格 ${currentCellData.grid_number} (Phys X: ${currentCellData.center_x}, Y: ${currentCellData.center_y})`;
+                    cell.addEventListener('click', handleGridCellClick);
+
+                    const gridNum = parseInt(currentCellData.grid_number);
+                    if (gridNum >= 1 && gridNum <= 50) {
+                        cell.classList.add('grid-cell-numbered-circle');
+                    }
+                } else {
+                    cell.textContent = ''; // Empty cell
+                    cell.classList.add('grid-cell-empty'); // Optional: for styling empty cells
+                }
                 container.appendChild(cell);
             }
         }
@@ -1625,6 +1715,12 @@
             const gridNumber = parseInt(event.currentTarget.dataset.gridNumber);
             if (!isNaN(gridNumber)) {
                 log(`点击了网格单元: ${gridNumber}`);
+                const cellData = printerGridConfig.grid_mapping.find(cell => cell.grid_number === gridNumber);
+                if (cellData) {
+                    console.log("handleGridCellClick: clickedGrid=", gridNumber, "expectedPhysical(X,Y)=", cellData.center_x, cellData.center_y);
+                } else {
+                    console.log("handleGridCellClick: clickedGrid=", gridNumber, "Error: Could not find cellData in printerGridConfig.grid_mapping");
+                }
                 callMoveToGridApi(gridNumber);
             } else {
                 log("无法从点击的单元格获取网格编号。", "error");
@@ -1634,6 +1730,7 @@
         // 调用API移动到网格位置
         async function callMoveToGridApi(gridNum) {
             log(`请求移动到网格位置 ${gridNum}...`);
+            console.log("callMoveToGridApi: requestingMoveToGrid=", gridNum);
             try {
                 const response = await fetch(`${apiBaseUrl}/api/printer/grid`, {
                     method: 'POST',
@@ -1672,6 +1769,8 @@
                     let percentX = ((currentX - x_min) / rangeX) * 100;
                     let percentY = ((y_max - currentY) / rangeY) * 100; // Y is inverted
 
+                    console.log("updatePositionPointer: current(X,Y)=", currentX, currentY, "config(minX,maxX,minY,maxY)=", printerGridConfig.x_min, printerGridConfig.x_max, printerGridConfig.y_min, printerGridConfig.y_max, "range(X,Y)=", rangeX, rangeY, "percent(X,Y)=", percentX, percentY);
+
                     // Clamp values to be within 0-100% to keep pointer within bounds
                     percentX = Math.max(0, Math.min(100, percentX));
                     percentY = Math.max(0, Math.min(100, percentY));
@@ -1684,6 +1783,62 @@
                 }
             } else {
                 pointer.style.display = 'none'; // Hide if coords are undefined
+            }
+
+            // Logic to find and highlight the closest cell
+            if (!printerGridConfig || !printerGridConfig.grid_mapping) {
+                // console.log("updatePositionPointer: printerGridConfig or grid_mapping not available for active cell highlighting.");
+                // Update coordinate spans and return if config not ready (spans are updated below, so just set currentActive to null)
+                currentActiveCellElement = null; 
+            } else {
+                let closestCellData = null;
+                let minDistanceSq = Infinity;
+
+                const physicalX = parseFloat(currentX);
+                const physicalY = parseFloat(currentY);
+
+                if (isNaN(physicalX) || isNaN(physicalY)) {
+                    // console.log("updatePositionPointer: currentX or currentY is not a number for distance calculation.");
+                    closestCellData = null; // Cannot calculate distance
+                } else {
+                    for (const cellData of printerGridConfig.grid_mapping) {
+                        if (cellData.center_x !== undefined && cellData.center_y !== undefined) {
+                            const cX = parseFloat(cellData.center_x);
+                            const cY = parseFloat(cellData.center_y);
+                            if (isNaN(cX) || isNaN(cY)) continue;
+
+                            const dx = physicalX - cX;
+                            const dy = physicalY - cY;
+                            const distanceSq = dx * dx + dy * dy;
+                            if (distanceSq < minDistanceSq) {
+                                minDistanceSq = distanceSq;
+                                closestCellData = cellData;
+                            }
+                        }
+                    }
+                }
+
+                if (currentActiveCellElement) {
+                    currentActiveCellElement.classList.remove('grid-cell-active');
+                }
+
+                if (closestCellData) {
+                    const activeGridNumber = parseInt(closestCellData.grid_number);
+                    if (activeGridNumber >= 1 && activeGridNumber <= 50) {
+                        const cellSelector = `.grid-cell[data-grid-number="${activeGridNumber}"]`;
+                        const newActiveCellDOMElement = document.querySelector(cellSelector);
+                        if (newActiveCellDOMElement) {
+                            newActiveCellDOMElement.classList.add('grid-cell-active');
+                            currentActiveCellElement = newActiveCellDOMElement;
+                        } else {
+                            currentActiveCellElement = null; 
+                        }
+                    } else {
+                        currentActiveCellElement = null; 
+                    }
+                } else {
+                    currentActiveCellElement = null; 
+                }
             }
 
             xCoordSpan.textContent = currentX !== undefined ? currentX.toFixed(2) : "N/A";
