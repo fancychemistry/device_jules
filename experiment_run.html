@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实验运行器</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding-top: 20px;
+            padding-bottom: 20px;
+        }
+        .device-card {
+            margin-bottom: 20px;
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .status-offline {
+            background-color: #dc3545;
+        }
+        .status-initialized {
+            background-color: #198754;
+        }
+        .log-container {
+            height: 200px;
+            overflow-y: auto;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+        }
+        .log-error {
+            color: #dc3545;
+        }
+        .log-success {
+            color: #198754;
+        }
+        .tab-content {
+            padding: 15px;
+            border-left: 1px solid #dee2e6;
+            border-right: 1px solid #dee2e6;
+            border-bottom: 1px solid #dee2e6;
+        }
+        #gridVisualizationContainer {
+            display: grid;
+            border: 1px solid #ccc;
+            position: relative; 
+            padding: 30px; 
+            box-sizing: border-box;
+        }
+        .grid-cell {
+            border: 1px solid #eee;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9em; 
+            box-sizing: border-box;
+            padding: 2px;
+        }
+        .grid-cell-numbered-circle {
+            border-radius: 50%;
+            aspect-ratio: 1;
+            transform: scale(0.95); 
+            transition: transform 0.2s ease-out;
+        }
+        .grid-cell-active {
+            background-color: green !important; 
+            color: white; 
+            transform: scale(1.05); 
+            box-shadow: 0 0 10px 4px rgba(0, 128, 0, 0.7); 
+            z-index: 5; 
+        }
+        #experimentFlowchart .list-group-item-primary {
+            background-color: #cfe2ff; /* Bootstrap primary subtle */
+            border-color: #9ec5fe;
+        }
+        #experimentFlowchart .list-group-item-success {
+            background-color: #d1e7dd; /* Bootstrap success subtle */
+            border-color: #a3cfbb;
+        }
+        #experimentFlowchart .list-group-item-danger {
+            background-color: #f8d7da; /* Bootstrap danger subtle */
+            border-color: #f1aeb5;
+        }
+        #experimentFlowchart .list-group-item-warning {
+            background-color: #fff3cd; /* Bootstrap warning subtle */
+            border-color: #ffe69c;
+        }
+         #experimentFlowchart .list-group-item-secondary {
+            background-color: #e2e3e5; /* Bootstrap secondary subtle for skipped */
+            border-color: #d3d6d8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">实验运行器</h1>
+        
+        <!-- 配置面板 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">系统配置</h5>
+            </div>
+            <div class="card-body">
+                <form id="configForm">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="moonrakerAddr" class="form-label">Moonraker 地址</label>
+                                <input type="text" class="form-control" id="moonrakerAddr" placeholder="http://192.168.51.168:7125">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="resultsDir" class="form-label">结果保存目录</label>
+                                <input type="text" class="form-control" id="resultsDir" placeholder="./experiment_results">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="chiPath" class="form-label">CHI 程序路径</label>
+                                <input type="text" class="form-control" id="chiPath" placeholder="C:\CHI760E\chi760e\chi760e.exe">
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-primary" id="saveConfig">保存设备配置</button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- 设备状态概览 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">设备状态</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <span class="status-indicator" id="printerStatus"></span>
+                            <span>位置控制</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <span class="status-indicator" id="pumpStatus"></span>
+                            <span>泵</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <span class="status-indicator" id="relayStatus"></span>
+                            <span>继电器</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <span class="status-indicator" id="chiStatus"></span>
+                            <span>CHI工作站</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 实验流程展示区 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">实验流程</h5>
+            </div>
+            <div class="card-body">
+                 <div class="progress mb-2" style="height: 25px;">
+                    <div id="overallExperimentProgress" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                </div>
+                <div id="experimentFlowchart" class="list-group" style="max-height: 400px; overflow-y: auto;">
+                    <!-- 实验步骤将由JS动态填充 -->
+                </div>
+            </div>
+            <div class="card-footer">
+                <button type="button" class="btn btn-primary me-2" id="startExperiment">开始实验</button>
+                <button type="button" class="btn btn-danger me-2" id="stopExperiment">停止实验</button>
+                <button type="button" class="btn btn-warning me-2" id="pauseExperiment" disabled>暂停实验</button>
+                <button type="button" class="btn btn-info me-2" id="resumeExperiment" disabled>恢复实验</button>
+                <button type="button" class="btn btn-info" id="refreshExperimentConfig">刷新流程</button>
+                <button type="button" class="btn btn-secondary" id="editExperimentConfigButton" data-bs-toggle="modal" data-bs-target="#editConfigModal">编辑实验配置</button> 
+            </div>
+        </div>
+        
+        <!-- 设备测试选项卡 (保留结构，移除大部分内容) -->
+        <ul class="nav nav-tabs" id="deviceTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="printer-tab" data-bs-toggle="tab" data-bs-target="#printer" type="button" role="tab">位置控制</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="pump-tab" data-bs-toggle="tab" data-bs-target="#pump" type="button" role="tab">泵</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="relay-tab" data-bs-toggle="tab" data-bs-target="#relay" type="button" role="tab">继电器</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="chi-tab" data-bs-toggle="tab" data-bs-target="#chi" type="button" role="tab">CHI工作站</button>
+            </li>
+        </ul>
+        
+        <div class="tab-content" id="deviceTabsContent">
+            <!-- 位置控制选项卡 (简化) -->
+            <div class="tab-pane fade show active" id="printer" role="tabpanel" aria-labelledby="printer-tab">
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <button type="button" class="btn btn-primary" id="initializePrinter">初始化位置控制</button>
+                        <button type="button" class="btn btn-primary me-2" id="homePrinter">归位</button>
+                        <button type="button" class="btn btn-secondary" id="getPrinterPosition">获取当前位置</button>
+                    </div>
+                </div>
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">位置可视化</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div id="gridVisualizationContainer" style="height: 650px; width: 100%;">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-2 text-center">
+                            <span>当前坐标: X=<span id="currentXCoord">N/A</span>, Y=<span id="currentYCoord">N/A</span>, Z=<span id="currentZCoord">N/A</span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 泵选项卡 (简化) -->
+            <div class="tab-pane fade" id="pump" role="tabpanel" aria-labelledby="pump-tab">
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <button type="button" class="btn btn-primary" id="initializePump">初始化泵</button>
+                        <button type="button" class="btn btn-danger" id="stopPump">停止所有泵</button> 
+                        <button type="button" class="btn btn-secondary" id="getPumpStatus">获取泵状态</button>
+                    </div>
+                </div>
+                 <div class="progress" id="pumpProgressContainer" style="display: none;">
+                    <div class="progress-bar" id="pumpProgress" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                </div>
+                <div class="mt-1 text-center" id="pumpTimeInfo" style="display: none;">
+                    <small><span id="pumpElapsedTime">0.0</span>s / <span id="pumpTotalDuration">0.0</span>s</small>
+                </div>
+            </div>
+            
+            <!-- 继电器选项卡 (简化) -->
+            <div class="tab-pane fade" id="relay" role="tabpanel" aria-labelledby="relay-tab">
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <button type="button" class="btn btn-primary" id="initializeRelay">初始化继电器</button>
+                        <button type="button" class="btn btn-secondary" id="getRelayStatus">刷新继电器状态</button>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">继电器 1</h5>
+                                <p class="card-text"><span class="badge bg-secondary" id="relay1Status">未知</span></p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">继电器 2</h5>
+                                <p class="card-text"><span class="badge bg-secondary" id="relay2Status">未知</span></p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">继电器 3</h5>
+                                <p class="card-text"><span class="badge bg-secondary" id="relay3Status">未知</span></p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">继电器 4</h5>
+                                <p class="card-text"><span class="badge bg-secondary" id="relay4Status">未知</span></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- CHI工作站选项卡 (简化) -->
+            <div class="tab-pane fade" id="chi" role="tabpanel" aria-labelledby="chi-tab">
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <button type="button" class="btn btn-primary" id="initializeChi">初始化CHI工作站</button>
+                        <button type="button" class="btn btn-danger" id="stopChiTest">停止当前测试</button>
+                        <button type="button" class="btn btn-secondary" id="getChiResults">刷新结果列表</button>
+                    </div>
+                </div>
+                <div class="row mt-0">
+                    <div class="col-md-6">
+                         <div class="card mb-3">
+                            <div class="card-header">
+                                <h5 class="mb-0">当前测试状态</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-1"><strong>测试类型:</strong> <span id="chiTestType">无</span></div>
+                                <div class="mb-1"><strong>状态:</strong> <span id="chiTestStatus">空闲</span></div>
+                                <div class="mb-1"><strong>文件名:</strong> <span id="chiTestFileName">N/A</span></div>
+                                <div class="mb-1"><strong>已用时间:</strong> <span id="chiElapsedTime">0s</span></div>
+                                <div class="progress mt-2" id="chiProgressContainer" style="display: none; height: 20px;">
+                                    <div class="progress-bar" id="chiProgress" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                                </div>
+                                <div id="chiErrorMessage" class="text-danger mt-2"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                         <div class="card mb-3">
+                            <div class="card-header">
+                                <h5 class="mb-0">测试结果文件</h5>
+                            </div>
+                            <div class="card-body" style="max-height: 200px; overflow-y: auto;">
+                                <div class="list-group" id="chiResultsList">
+                                    <div class="list-group-item">请点击刷新按钮获取结果</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 日志面板 -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">操作日志</h5>
+            </div>
+            <div class="card-body">
+                <div class="log-container" id="logContainer">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 配置编辑器 Modal -->
+    <div class="modal fade" id="editConfigModal" tabindex="-1" aria-labelledby="editConfigModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editConfigModalLabel">编辑实验配置 (experiment_config.json)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <textarea id="jsonConfigEditor" class="form-control" rows="25" style="font-family: monospace; font-size: 0.9em;"></textarea>
+                    <div id="jsonErrorDisplay" class="text-danger mt-2"></div> 
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                    <button type="button" class="btn btn-primary" id="saveJsonConfig">保存配置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 公共变量
+        const apiBaseUrl = ''; 
+        let wsConnection = null;
+        let currentActiveCellElement = null;
+        let printerGeneralLimits = null;
+        let printerGridConfig = null;
+        
+        let chiElapsedTimer = null;
+        let chiStartTime = 0;
+        
+        async function initialize() {
+            await loadConfig(); 
+            await updateDeviceStatus();
+            await fetchGridInfo(); 
+            
+            connectWebSocket();
+            bindEvents(); 
+            
+            document.getElementById('startExperiment').addEventListener('click', startExperimentHandler);
+            document.getElementById('stopExperiment').addEventListener('click', stopExperimentHandler);
+            document.getElementById('refreshExperimentConfig').addEventListener('click', fetchExperimentConfigAndDisplay);
+            document.getElementById('pauseExperiment').addEventListener('click', pauseExperimentHandler);
+            document.getElementById('resumeExperiment').addEventListener('click', resumeExperimentHandler);
+
+
+            const editConfigModalElement = document.getElementById('editConfigModal');
+            if (editConfigModalElement) {
+                editConfigModalElement.addEventListener('show.bs.modal', function (event) {
+                    loadConfigIntoEditor();
+                });
+            }
+            const saveJsonConfigButton = document.getElementById('saveJsonConfig');
+            if (saveJsonConfigButton) {
+                 saveJsonConfigButton.addEventListener('click', saveJsonConfigHandler);
+            }
+
+            await fetchExperimentConfigAndDisplay(); 
+            document.getElementById('stopExperiment').disabled = true;
+            document.getElementById('pauseExperiment').disabled = true;
+            document.getElementById('resumeExperiment').disabled = true;
+        }
+        
+        async function loadConfig() {
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/config`);
+                const data = await response.json();
+                document.getElementById('moonrakerAddr').value = data.moonraker_addr || '';
+                document.getElementById('resultsDir').value = data.results_dir || '';
+                document.getElementById('chiPath').value = data.chi_path || '';
+                log("设备配置已加载", "info");
+            } catch (error) {
+                log(`加载设备配置失败: ${error.message}`, "error");
+            }
+        }
+        
+        async function saveDeviceConfig() { 
+            const config = {
+                moonraker_addr: document.getElementById('moonrakerAddr').value,
+                results_dir: document.getElementById('resultsDir').value,
+                chi_path: document.getElementById('chiPath').value
+            };
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                const data = await response.json();
+                log(data.message, data.error ? "error" : "success");
+            } catch (error) {
+                log(`保存设备配置失败: ${error.message}`, "error");
+            }
+        }
+        
+        async function updateDeviceStatus() {
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/status`);
+                const data = await response.json();
+                updateStatusIndicator('printerStatus', data.printer.initialized);
+                updateStatusIndicator('pumpStatus', data.pump.initialized);
+                updateStatusIndicator('relayStatus', data.relay.initialized);
+                updateStatusIndicator('chiStatus', data.chi.initialized);
+            } catch (error) {
+                log(`获取设备状态失败: ${error.message}`, "error");
+            }
+        }
+        
+        function updateStatusIndicator(elementId, isInitialized) {
+            const element = document.getElementById(elementId);
+            if (!element) return;
+            element.classList.toggle('status-initialized', isInitialized);
+            element.classList.toggle('status-offline', !isInitialized);
+        }
+
+        function connectWebSocket() {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/ws`; 
+            
+            wsConnection = new WebSocket(wsUrl);
+            wsConnection.onopen = () => log("WebSocket 连接已建立", "success");
+            wsConnection.onmessage = (event) => handleWebSocketMessage(JSON.parse(event.data));
+            wsConnection.onclose = () => {
+                log("WebSocket 连接已关闭，3秒后尝试重连", "error");
+                setTimeout(connectWebSocket, 3000);
+            };
+            wsConnection.onerror = (error) => log(`WebSocket 错误: ${error.message || '未知错误'}`, "error");
+        }
+        
+        function handleWebSocketMessage(data) {
+            console.log("WS Message:", data); 
+            switch (data.type) {
+                case 'ping':
+                    break;
+                case 'printer_status':
+                    updateStatusIndicator('printerStatus', data.initialized);
+                    if (data.position) updatePositionPointer(data.position.x, data.position.y, data.position.z);
+                    break;
+                case 'pump_status':
+                    updateStatusIndicator('pumpStatus', data.initialized);
+                    handlePumpStatusUpdate(data.status);
+                    break;
+                case 'relay_status':
+                    updateStatusIndicator('relayStatus', data.initialized);
+                    if (data.states) updateRelayUI(data.states);
+                    break;
+                case 'chi_status': 
+                    updateStatusIndicator('chiStatus', data.initialized);
+                    if(data.status_data) handleChiDeviceStatusUpdate(data.status_data);
+                    break;
+                case 'experiment_step_update':
+                    log(`实验步骤更新: ID=${data.step_id}, 状态=${data.status}${data.error_message ? ', 错误: ' + data.error_message : ''}`, data.status === 'error' ? 'error' : 'info');
+                    const stepElement = document.getElementById(`flowchart-step-${data.step_id}`);
+                    if (stepElement) {
+                        stepElement.classList.remove('list-group-item-primary', 'list-group-item-success', 'list-group-item-danger', 'list-group-item-warning', 'list-group-item-secondary');
+                        const statusBadge = stepElement.querySelector('small');
+                        let statusText = '';
+                        switch (data.status) {
+                            case 'running':
+                                stepElement.classList.add('list-group-item-primary');
+                                statusText = '运行中...';
+                                break;
+                            case 'completed':
+                                stepElement.classList.add('list-group-item-success');
+                                statusText = '已完成';
+                                break;
+                            case 'error':
+                                stepElement.classList.add('list-group-item-danger');
+                                statusText = `错误: ${data.error_message || '未知错误'}`;
+                                break;
+                            case 'skipped':
+                                 stepElement.classList.add('list-group-item-secondary');
+                                 statusText = '已跳过';
+                                 break;
+                            default: 
+                                statusText = data.status;
+                                break;
+                        }
+                        if (statusBadge) statusBadge.textContent = statusText;
+                    }
+                    if (data.progress_percent !== undefined) {
+                        const overallProgress = document.getElementById('overallExperimentProgress'); 
+                        if (overallProgress) {
+                            overallProgress.style.width = `${data.progress_percent}%`;
+                            overallProgress.textContent = `${data.progress_percent.toFixed(0)}%`;
+                        }
+                    }
+                    // Update button states also based on step updates if they carry pause info
+                    if (data.is_paused !== undefined) {
+                        updateExperimentButtonsState(data.is_running, data.is_paused, data.status);
+                    }
+                    break;
+                case 'experiment_status_update': 
+                    log(`实验状态: ${data.status}, 消息: ${data.message || ''}`, data.status === 'error' ? 'error' : 'info');
+                    updateExperimentButtonsState(data.is_running, data.is_paused, data.status);
+                    
+                    if (!data.is_running && data.progress_percent !== undefined) {
+                        const overallProgress = document.getElementById('overallExperimentProgress');
+                        if (overallProgress) {
+                             overallProgress.classList.remove('bg-success', 'bg-danger', 'bg-warning'); 
+                            if (data.error_occurred || data.status === 'error' || data.status === 'failed') {
+                                overallProgress.classList.add('bg-danger');
+                                overallProgress.textContent = `失败: ${data.progress_percent.toFixed(0)}%`;
+                            } else if (data.stop_requested || data.status === 'stopped') {
+                                overallProgress.classList.add('bg-warning');
+                                overallProgress.textContent = `停止: ${data.progress_percent.toFixed(0)}%`;
+                            } else if (data.status === 'completed' && data.progress_percent === 100) {
+                                overallProgress.classList.add('bg-success');
+                            }
+                        }
+                    } else if (data.is_running) {
+                         const overallProgress = document.getElementById('overallExperimentProgress');
+                         if(overallProgress) {
+                            overallProgress.classList.remove('bg-success', 'bg-danger', 'bg-warning');
+                         }
+                    }
+                    break;
+                case 'log_message': 
+                     log(data.message, data.level || "info");
+                     break;
+                default:
+                    log(`收到未知类型的WebSocket消息: ${JSON.stringify(data)}`, "warn");
+            }
+        }
+
+        function updateExperimentButtonsState(isRunning, isPaused, statusString) {
+            const startBtn = document.getElementById('startExperiment');
+            const stopBtn = document.getElementById('stopExperiment');
+            const pauseBtn = document.getElementById('pauseExperiment');
+            const resumeBtn = document.getElementById('resumeExperiment');
+            const editBtn = document.getElementById('editExperimentConfigButton');
+
+            if (isRunning) {
+                if (isPaused) { // Paused state
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false; // Can stop while paused
+                    pauseBtn.disabled = true;
+                    resumeBtn.disabled = false;
+                    editBtn.disabled = true; 
+                } else { // Running (not paused) state
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    pauseBtn.disabled = false;
+                    resumeBtn.disabled = true;
+                    editBtn.disabled = true;
+                }
+            } else { // Not running (idle, completed, error, stopped)
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                pauseBtn.disabled = true;
+                resumeBtn.disabled = true;
+                editBtn.disabled = false;
+            }
+             // Specific handling for "pause_pending" or "resuming" can be added if backend sends these
+            if (statusString === 'pause_pending') {
+                pauseBtn.disabled = true; // Visually indicate pause is being processed
+            }
+            if (statusString === 'resuming') {
+                resumeBtn.disabled = true; // Visually indicate resume is being processed
+            }
+        }
+
+
+        function handlePumpStatusUpdate(status) {
+            const pumpProgressContainer = document.getElementById('pumpProgressContainer');
+            const pumpProgress = document.getElementById('pumpProgress');
+            const pumpTimeInfo = document.getElementById('pumpTimeInfo');
+            const pumpElapsedTime = document.getElementById('pumpElapsedTime');
+            const pumpTotalDuration = document.getElementById('pumpTotalDuration');
+
+            if (status.running || (status.progress > 0 && status.progress < 1)) {
+                pumpProgressContainer.style.display = 'flex';
+                pumpTimeInfo.style.display = 'block';
+                const progressPercent = Math.min(Math.max(status.progress * 100, 0), 100).toFixed(0);
+                pumpProgress.style.width = `${progressPercent}%`;
+                pumpProgress.textContent = `${progressPercent}%`;
+                pumpProgress.setAttribute('aria-valuenow', progressPercent);
+                pumpElapsedTime.textContent = parseFloat(status.elapsed_time_seconds || 0).toFixed(1);
+                pumpTotalDuration.textContent = status.total_duration_seconds > 0 ? parseFloat(status.total_duration_seconds || 0).toFixed(1) : '?';
+            } else {
+                if (status.progress === 0 || status.progress === 1) {
+                     pumpProgress.style.width = `${status.progress * 100}%`;
+                     pumpProgress.textContent = `${status.progress * 100}%`;
+                     pumpElapsedTime.textContent = parseFloat(status.elapsed_time_seconds || 0).toFixed(1);
+                     if(status.progress === 1) {
+                         setTimeout(() => {
+                            if(!status.running) { 
+                                pumpProgressContainer.style.display = 'none';
+                                pumpTimeInfo.style.display = 'none';
+                            }
+                         }, 2000);
+                     } else {
+                         pumpProgressContainer.style.display = 'none';
+                         pumpTimeInfo.style.display = 'none';
+                     }
+                }
+            }
+        }
+        
+        function updateRelayUI(states) { 
+            for (let i = 1; i <= 4; i++) {
+                const statusElement = document.getElementById(`relay${i}Status`);
+                if (statusElement) {
+                    const state = states[String(i)];
+                    statusElement.textContent = state === 'on' ? '开启' : (state === 'off' ? '关闭' : '未知');
+                    statusElement.className = `badge ${state === 'on' ? 'bg-success' : (state === 'off' ? 'bg-danger' : 'bg-secondary')}`;
+                }
+            }
+        }
+
+        function handleChiDeviceStatusUpdate(statusData) {
+            const chiTestTypeEl = document.getElementById('chiTestType');
+            const chiTestStatusEl = document.getElementById('chiTestStatus');
+            const chiTestFileNameEl = document.getElementById('chiTestFileName');
+            const chiElapsedTimeEl = document.getElementById('chiElapsedTime');
+            const chiProgressContainerEl = document.getElementById('chiProgressContainer');
+            const chiProgressEl = document.getElementById('chiProgress');
+            const chiErrorEl = document.getElementById('chiErrorMessage');
+
+            if(chiTestTypeEl) chiTestTypeEl.textContent = statusData.test_type || (statusData.current_test_params?.test_type) || '无';
+            if(chiTestStatusEl) chiTestStatusEl.textContent = statusData.status || '未知';
+            if(chiTestFileNameEl) chiTestFileNameEl.textContent = statusData.result_file || (statusData.current_test_params?.file_name) || 'N/A';
+            if(chiElapsedTimeEl) chiElapsedTimeEl.textContent = `${parseFloat(statusData.elapsed_time || 0).toFixed(1)}s`;
+            
+            if(chiErrorEl) chiErrorEl.textContent = statusData.status === 'error' ? (statusData.message || '发生错误') : '';
+
+            if (statusData.status === 'running' || statusData.status === 'initializing') {
+                if(chiProgressContainerEl) chiProgressContainerEl.style.display = 'flex';
+                const progress = (statusData.progress || 0) * 100;
+                if(chiProgressEl) {
+                    chiProgressEl.style.width = `${progress.toFixed(0)}%`;
+                    chiProgressEl.textContent = `${progress.toFixed(0)}%`;
+                }
+                if (!chiElapsedTimer && statusData.status === 'running') {
+                    chiStartTime = Date.now() - (parseFloat(statusData.elapsed_time || 0) * 1000);
+                    chiElapsedTimer = setInterval(updateChiDisplayTimeOnly, 1000);
+                }
+            } else {
+                if(chiProgressContainerEl) chiProgressContainerEl.style.display = 'none';
+                if (chiElapsedTimer) {
+                    clearInterval(chiElapsedTimer);
+                    chiElapsedTimer = null;
+                }
+            }
+        }
+        function updateChiDisplayTimeOnly() { 
+             const elapsedSeconds = Math.floor((Date.now() - chiStartTime) / 1000);
+             const chiElapsedTimeEl = document.getElementById('chiElapsedTime');
+             if(chiElapsedTimeEl) chiElapsedTimeEl.textContent = `${elapsedSeconds}s`;
+        }
+
+        function log(message, level = "info") {
+            const logContainer = document.getElementById('logContainer');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${level}`;
+            const timestamp = new Date().toLocaleTimeString();
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        function bindEvents() {
+            document.getElementById('saveConfig').addEventListener('click', saveDeviceConfig);
+            
+            document.getElementById('initializePrinter').addEventListener('click', initializePrinter);
+            document.getElementById('homePrinter').addEventListener('click', homePrinter);
+            document.getElementById('getPrinterPosition').addEventListener('click', getPrinterPosition);
+            
+            document.getElementById('initializePump').addEventListener('click', initializePump);
+            document.getElementById('stopPump').addEventListener('click', () => stopSpecificPump(0)); 
+            document.getElementById('getPumpStatus').addEventListener('click', () => getSpecificPumpStatus(0));
+
+            document.getElementById('initializeRelay').addEventListener('click', initializeRelay);
+            document.getElementById('getRelayStatus').addEventListener('click', getRelayStatus);
+            
+            document.getElementById('initializeChi').addEventListener('click', initializeChi);
+            document.getElementById('stopChiTest').addEventListener('click', stopChiTest); 
+            document.getElementById('getChiResults').addEventListener('click', getChiResults);
+        }
+
+        async function initializePrinter() {
+            try {
+                log("正在初始化位置控制...");
+                const response = await fetch(`${apiBaseUrl}/api/printer/initialize`, { method: 'POST' });
+                const data = await response.json();
+                log(data.message, data.error ? "error" : "success");
+                if (!data.error) updateStatusIndicator('printerStatus', true);
+            } catch (error) { log(`初始化位置控制失败: ${error.message}`, "error"); }
+        }
+        async function homePrinter() {
+            try {
+                log("正在归位位置控制器...");
+                const response = await fetch(`${apiBaseUrl}/api/printer/home`, { method: 'POST' });
+                const data = await response.json();
+                log(data.message, data.error ? "error" : "success");
+            } catch (error) { log(`归位位置控制器失败: ${error.message}`, "error"); }
+        }
+        async function getPrinterPosition() {
+            try {
+                log("正在获取当前位置...");
+                const response = await fetch(`${apiBaseUrl}/api/printer/position`);
+                const data = await response.json();
+                if (data.position) {
+                    log(`当前位置: X=${data.position.x?.toFixed(2)}, Y=${data.position.y?.toFixed(2)}, Z=${data.position.z?.toFixed(2)}`, "success");
+                    updatePositionPointer(data.position.x, data.position.y, data.position.z);
+                } else { log(data.message, data.error ? "error" : "info"); }
+            } catch (error) { log(`获取当前位置失败: ${error.message}`, "error"); }
+        }
+
+        async function initializePump() {
+            try {
+                log("正在初始化泵...");
+                const response = await fetch(`${apiBaseUrl}/api/pump/initialize`, { method: 'POST' });
+                const data = await response.json();
+                log(data.message, data.error ? "error" : "success");
+                if (!data.error) updateStatusIndicator('pumpStatus', true);
+            } catch (error) { log(`初始化泵失败: ${error.message}`, "error"); }
+        }
+        async function stopSpecificPump(pumpIndex = 0) { 
+             try {
+                log(`请求停止泵 ${pumpIndex}...`);
+                const response = await fetch(`${apiBaseUrl}/api/pump/stop`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ pump_index: pumpIndex })
+                });
+                const data = await response.json();
+                log(data.message, data.error ? "error" : "success");
+            } catch (error) {
+                log(`停止泵 ${pumpIndex} 失败: ${error.message}`, "error");
+            }
+        }
+         async function getSpecificPumpStatus(pumpIndex = 0) {
+            try {
+                log(`正在获取泵 ${pumpIndex} 状态...`);
+                const response = await fetch(`${apiBaseUrl}/api/pump/status?pump_index=${pumpIndex}`);
+                const data = await response.json();
+                if (data.status) {
+                    log(`泵 ${pumpIndex} 状态: ${JSON.stringify(data.status)}`, "info");
+                    handlePumpStatusUpdate(data.status); 
+                } else { log(data.message, data.error ? "error" : "info"); }
+            } catch (error) { log(`获取泵 ${pumpIndex} 状态失败: ${error.message}`, "error"); }
+        }
+
+
+        async function initializeRelay() {
+            try {
+                log("正在初始化继电器...");
+                const response = await fetch(`${apiBaseUrl}/api/relay/initialize`, { method: 'POST' });
+                const data = await response.json();
+                log(data.message, data.error ? "error" : "success");
+                if (!data.error) {
+                    updateStatusIndicator('relayStatus', true);
+                    await getRelayStatus(); 
+                }
+            } catch (error) { log(`初始化继电器失败: ${error.message}`, "error"); }
+        }
+        async function getRelayStatus() {
+            try {
+                log("正在获取继电器状态...");
+                const response = await fetch(`${apiBaseUrl}/api/relay/status`);
+                const data = await response.json();
+                if (data.states) {
+                    updateRelayUI(data.states);
+                    log("继电器状态已刷新。", "info");
+                } else { log(data.message, data.error ? "error" : "info"); }
+            } catch (error) { log(`获取继电器状态失败: ${error.message}`, "error"); }
+        }
+
+        async function initializeChi() {
+            try {
+                log("正在初始化CHI工作站...");
+                const response = await fetch(`${apiBaseUrl}/api/chi/initialize`, { method: 'POST' });
+                const data = await response.json();
+                log(data.message, data.error ? "error" : "success");
+                if (!data.error) updateStatusIndicator('chiStatus', true);
+            } catch (error) { log(`初始化CHI工作站失败: ${error.message}`, "error"); }
+        }
+        async function stopChiTest() { 
+            try {
+                log("请求停止CHI测试...");
+                const response = await fetch(`${apiBaseUrl}/api/chi/stop`, { method: 'POST' });
+                const data = await response.json();
+                log(data.message, data.error ? "error" : "success");
+            } catch (error) { log(`停止CHI测试失败: ${error.message}`, "error"); }
+        }
+        async function getChiResults() {
+            try {
+                log("正在获取CHI测试结果列表...");
+                const response = await fetch(`${apiBaseUrl}/api/chi/results`);
+                const data = await response.json();
+                if (data.results) {
+                    updateChiResultsList(data.results);
+                    log(`获取到 ${data.results.length} 个测试结果文件`, "success");
+                } else { log(data.message, data.error ? "error" : "info"); }
+            } catch (error) { log(`获取CHI测试结果列表失败: ${error.message}`, "error"); }
+        }
+        function updateChiResultsList(results) {
+            const listElement = document.getElementById('chiResultsList');
+            listElement.innerHTML = '';
+            if (results.length === 0) {
+                listElement.innerHTML = '<div class="list-group-item">没有测试结果文件</div>'; return;
+            }
+            results.forEach(result => {
+                const item = document.createElement('a');
+                item.className = 'list-group-item list-group-item-action';
+                item.href = `${apiBaseUrl}/api/chi/download?file=${encodeURIComponent(result.path)}`;
+                item.target = '_blank';
+                const date = new Date(result.time * 1000).toLocaleString();
+                item.innerHTML = `<div class="d-flex w-100 justify-content-between"><h6 class="mb-1">${result.name}</h6><small>${date}</small></div><p class="mb-1"><small>${result.type} - ${(result.size / 1024).toFixed(2)} KB</small></p>`;
+                listElement.appendChild(item);
+            });
+        }
+        
+        async function fetchGridInfo() {
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/printer/info`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+                printerGeneralLimits = data.general_limits;
+                printerGridConfig = data.grid_config;
+                displayGrid(printerGridConfig);
+            } catch (error) {
+                log(`获取位置控制网格信息失败: ${error.message}`, "error");
+                document.getElementById('gridVisualizationContainer').innerHTML = '<p class="text-danger text-center">无法加载网格信息</p>';
+            }
+        }
+        function displayGrid(gridConfig) {
+            const container = document.getElementById('gridVisualizationContainer');
+            if (!container || !gridConfig) return;
+            container.innerHTML = ''; 
+            const R = parseInt(gridConfig.rows);
+            const C = parseInt(gridConfig.cols);
+            if (isNaN(R) || isNaN(C) || R <= 0 || C <= 0) {
+                container.innerHTML = '<p class="text-danger text-center">网格配置错误</p>'; return;
+            }
+            container.style.gridTemplateRows = `repeat(${R}, 1fr)`;
+            container.style.gridTemplateColumns = `repeat(${C}, 1fr)`;
+            const totalVisualCells = R * C;
+            const cellsForDom = new Array(totalVisualCells).fill(null);
+            const sortedMapping = [...gridConfig.grid_mapping].sort((a, b) => (a.grid_number || 0) - (b.grid_number || 0));
+
+            for (const cellData of sortedMapping) {
+                const n = parseInt(cellData.grid_number);
+                if (!isNaN(n) && n >= 1 && n <= totalVisualCells) {
+                    const zeroBasedN = n - 1;
+                    const dataCol = zeroBasedN % C;
+                    const dataRow = Math.floor(zeroBasedN / C);
+                    const visualRowFromTop = (R - 1) - dataRow;
+                    const domIndex = visualRowFromTop * C + dataCol;
+
+                    if (domIndex >= 0 && domIndex < totalVisualCells && cellsForDom[domIndex] === null) {
+                        const cell = document.createElement('div');
+                        cell.className = 'grid-cell grid-cell-numbered-circle';
+                        cell.textContent = cellData.grid_number.toString();
+                        cell.dataset.gridNumber = cellData.grid_number.toString();
+                        cell.title = `网格 ${cellData.grid_number} (Phys X: ${cellData.center_x?.toFixed(1)}, Y: ${cellData.center_y?.toFixed(1)})`;
+                        cellsForDom[domIndex] = cell;
+                    }
+                }
+            }
+            for (let i = 0; i < totalVisualCells; i++) {
+                if (cellsForDom[i]) container.appendChild(cellsForDom[i]);
+                else {
+                    const emptyCell = document.createElement('div');
+                    emptyCell.className = 'grid-cell grid-cell-empty';
+                    emptyCell.innerHTML = '&nbsp;'; 
+                    container.appendChild(emptyCell);
+                }
+            }
+        }
+        function updatePositionPointer(currentX, currentY, currentZ) {
+            const xCoordSpan = document.getElementById('currentXCoord');
+            const yCoordSpan = document.getElementById('currentYCoord');
+            const zCoordSpan = document.getElementById('currentZCoord');
+            if (!xCoordSpan || !yCoordSpan || !zCoordSpan || !printerGridConfig || !printerGridConfig.grid_mapping) return;
+            
+            xCoordSpan.textContent = currentX !== undefined ? currentX.toFixed(2) : "N/A";
+            yCoordSpan.textContent = currentY !== undefined ? currentY.toFixed(2) : "N/A";
+            zCoordSpan.textContent = currentZ !== undefined ? currentZ.toFixed(2) : "N/A";
+
+            let closestCellData = null;
+            let minDistanceSq = Infinity;
+            const physicalX = parseFloat(currentX);
+            const physicalY = parseFloat(currentY);
+
+            if (!isNaN(physicalX) && !isNaN(physicalY)) {
+                for (const cellData of printerGridConfig.grid_mapping) {
+                    if (cellData.center_x !== undefined && cellData.center_y !== undefined) {
+                        const cX = parseFloat(cellData.center_x);
+                        const cY = parseFloat(cellData.center_y);
+                        if (isNaN(cX) || isNaN(cY)) continue;
+                        const distanceSq = (physicalX - cX)**2 + (physicalY - cY)**2;
+                        if (distanceSq < minDistanceSq) {
+                            minDistanceSq = distanceSq;
+                            closestCellData = cellData;
+                        }
+                    }
+                }
+            }
+
+            if (currentActiveCellElement) currentActiveCellElement.classList.remove('grid-cell-active');
+            
+            if (closestCellData) {
+                const typicalCellWidth = (printerGridConfig.x_max - printerGridConfig.x_min) / printerGridConfig.cols;
+                const typicalCellHeight = (printerGridConfig.y_max - printerGridConfig.y_min) / printerGridConfig.rows;
+                const distanceThreshold = Math.min(typicalCellWidth, typicalCellHeight) * 0.6; 
+
+                if (Math.sqrt(minDistanceSq) < distanceThreshold) {
+                    const activeGridNumber = parseInt(closestCellData.grid_number);
+                    const newActiveCellDOMElement = document.querySelector(`.grid-cell[data-grid-number="${activeGridNumber}"]`);
+                    if (newActiveCellDOMElement) {
+                        newActiveCellDOMElement.classList.add('grid-cell-active');
+                        currentActiveCellElement = newActiveCellDOMElement;
+                    } else { currentActiveCellElement = null; }
+                } else {
+                    currentActiveCellElement = null;
+                }
+            } else { currentActiveCellElement = null; }
+        }
+
+        async function fetchExperimentConfigAndDisplay() {
+            try {
+                log("正在获取实验配置...");
+                const response = await fetch(`${apiBaseUrl}/api/experiment/config`);
+                if (!response.ok) {
+                    throw new Error(`获取实验配置失败: ${response.statusText}`);
+                }
+                const config = await response.json();
+                log("实验配置已加载。", "success");
+                displayFlowchart(config);
+            } catch (error) {
+                log(`加载实验配置错误: ${error.message}`, "error");
+                document.getElementById('experimentFlowchart').innerHTML = '<div class="list-group-item text-danger">无法加载实验流程。</div>';
+            }
+        }
+
+        function displayFlowchart(config) {
+            const flowchartContainer = document.getElementById('experimentFlowchart');
+            flowchartContainer.innerHTML = ''; 
+            if (!config || !config.experiment_sequence || config.experiment_sequence.length === 0) {
+                flowchartContainer.innerHTML = '<div class="list-group-item">实验序列为空或未定义。</div>';
+                return;
+            }
+            config.experiment_sequence.forEach(step => {
+                const stepElement = document.createElement('div');
+                stepElement.className = 'list-group-item list-group-item-action';
+                stepElement.id = `flowchart-step-${step.id}`;
+                stepElement.innerHTML = `
+                    <div class="d-flex w-100 justify-content-between">
+                        <h6 class="mb-1">${step.id}</h6>
+                        <small class="text-muted">待处理</small> 
+                    </div>
+                    <p class="mb-1">${step.description || '无描述'}</p>
+                `;
+                if (step.enabled === false) {
+                    stepElement.classList.add('list-group-item-light', 'text-muted');
+                    stepElement.querySelector('small').textContent = '已禁用';
+                }
+                else if (config.experiment_flags && config.experiment_flags[step.skip_if_flag_true]) {
+                    stepElement.classList.add('list-group-item-light', 'text-muted');
+                    stepElement.querySelector('small').textContent = '将跳过 (标志)';
+                }
+                flowchartContainer.appendChild(stepElement);
+            });
+        }
+        
+        async function startExperimentHandler() { 
+            log("请求启动实验...", "info");
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/experiment/start`, { method: 'POST' });
+                const result = await response.json();
+                if (result.error) {
+                    log(`启动实验失败: ${result.message}`, "error");
+                    updateExperimentButtonsState(false, false, 'error'); // Update buttons on error
+                } else {
+                    log(result.message, "success");
+                    // Button states will be updated via WebSocket 'experiment_status_update'
+                    await fetchExperimentConfigAndDisplay(); 
+                     const overallProgress = document.getElementById('overallExperimentProgress');
+                    if (overallProgress) { 
+                        overallProgress.style.width = `0%`;
+                        overallProgress.textContent = `0%`;
+                        overallProgress.classList.remove('bg-success', 'bg-danger', 'bg-warning');
+                    }
+                }
+            } catch (error) {
+                log(`启动实验请求错误: ${error.message}`, "error");
+                updateExperimentButtonsState(false, false, 'error'); // Update buttons on API error
+            }
+        }
+
+        async function stopExperimentHandler() { 
+            log("请求停止实验...", "info");
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/experiment/stop`, { method: 'POST' });
+                const result = await response.json();
+                if (result.error) {
+                    log(`停止实验失败: ${result.message}`, "error");
+                } else {
+                    log(result.message, "success");
+                    // Button states will be updated via WebSocket
+                }
+            } catch (error) {
+                log(`停止实验请求错误: ${error.message}`, "error");
+                updateExperimentButtonsState(false, false, 'error'); // Assume it stopped on error
+            }
+        }
+
+        async function pauseExperimentHandler() {
+            log("请求暂停实验...", "info");
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/experiment/pause`, { method: 'POST' });
+                const result = await response.json();
+                 if (result.error) {
+                    log(`暂停实验请求失败: ${result.message}`, "error");
+                } else {
+                    log(result.message, "success");
+                    // Button states will be updated via WebSocket
+                }
+            } catch (error) {
+                 log(`暂停实验请求错误: ${error.message}`, "error");
+            }
+        }
+
+        async function resumeExperimentHandler() {
+            log("请求恢复实验...", "info");
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/experiment/resume`, { method: 'POST' });
+                const result = await response.json();
+                if (result.error) {
+                    log(`恢复实验请求失败: ${result.message}`, "error");
+                } else {
+                    log(result.message, "success");
+                     // Button states will be updated via WebSocket
+                }
+            } catch (error) {
+                log(`恢复实验请求错误: ${error.message}`, "error");
+            }
+        }
+        
+        async function loadConfigIntoEditor() {
+            log("正在加载配置到编辑器...", "info");
+            document.getElementById('jsonErrorDisplay').textContent = ''; 
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/experiment/config`);
+                if (!response.ok) {
+                    throw new Error(`获取配置失败: ${response.statusText}`);
+                }
+                const configData = await response.json(); 
+                document.getElementById('jsonConfigEditor').value = JSON.stringify(configData, null, 2);
+                log("配置已加载到编辑器。", "success");
+            } catch (error) {
+                log(`加载配置到编辑器错误: ${error.message}`, "error");
+                document.getElementById('jsonConfigEditor').value = `// 加载配置失败: ${error.message}`;
+                document.getElementById('jsonErrorDisplay').textContent = `加载配置失败: ${error.message}`;
+            }
+        }
+
+        async function saveJsonConfigHandler() {
+            log("正在保存配置...", "info");
+            const editorContent = document.getElementById('jsonConfigEditor').value;
+            document.getElementById('jsonErrorDisplay').textContent = ''; 
+
+            try {
+                const parsedConfig = JSON.parse(editorContent); 
+                const response = await fetch(`${apiBaseUrl}/api/experiment/config`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(parsedConfig) 
+                });
+                const result = await response.json();
+                if (response.ok && !result.error) {
+                    log("配置已成功保存。", "success");
+                    const modalInstance = bootstrap.Modal.getInstance(document.getElementById('editConfigModal'));
+                    if (modalInstance) {
+                        modalInstance.hide();
+                    }
+                    await fetchExperimentConfigAndDisplay(); 
+                } else {
+                    log(`保存配置失败: ${result.message || '未知错误'}`, "error");
+                    document.getElementById('jsonErrorDisplay').textContent = `保存失败: ${result.message || '未知错误'}`;
+                }
+            } catch (e) {
+                log(`配置无效或保存过程中出错: ${e.message}`, "error");
+                document.getElementById('jsonErrorDisplay').textContent = `配置无效: ${e.message}`;
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', initialize);
+    </script>
+</body>
+</html>
