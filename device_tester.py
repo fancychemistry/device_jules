@@ -39,6 +39,8 @@ from pathlib import Path
 import glob
 from pydantic import BaseModel
 
+from experiment_run import router as experiment_router
+
 # 引入适配器
 from backend.pubsub import Broadcaster
 from backend.services.adapters.printer_adapter import PrinterAdapter
@@ -1812,6 +1814,8 @@ async def shutdown_event():
             logger.info("应用关闭时已停止WebSocket监听器")
         except Exception as e:
             logger.error(f"停止WebSocket监听器失败: {e}")
+
+app.include_router(experiment_router, prefix="/exp", tags=["Experiment Execution"])
 
 if __name__ == "__main__":
     # 查找可用端口
