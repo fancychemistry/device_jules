@@ -3,3 +3,42 @@
 2025-05-23 22:44:58,446 - experiment_automation - INFO - 执行步骤 1/9: INIT_00_HOME_PRINTER
 2025-05-23 22:44:59,489 - httpx - INFO - HTTP Request: POST http://localhost:8001/api/printer/home "HTTP/1.1 200 OK"
 2025-05-23 22:44:59,494 - experiment_automation - ERROR - 步骤 INIT_00_HOME_PRINTER 执行失败: 打印机归位成功
+2025-05-24 12:18:05,397 - asyncio - ERROR - Exception in callback _ProactorReadPipeTransport._loop_reading()
+handle: <Handle _ProactorReadPipeTransport._loop_reading()>
+Traceback (most recent call last):
+  File "C:\Users\316\AppData\Local\Programs\Python\Python313\Lib\asyncio\events.py", line 89, in _run
+    self._context.run(self._callback, *self._args)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\316\AppData\Local\Programs\Python\Python313\Lib\asyncio\proactor_events.py", line 325, in _loop_reading
+    self._data_received(data, length)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\316\AppData\Local\Programs\Python\Python313\Lib\asyncio\proactor_events.py", line 274, in _data_received
+    self._protocol.data_received(data)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\316\AppData\Local\Programs\Python\Python313\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 172, in data_received
+    self.handle_events()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\316\AppData\Local\Programs\Python\Python313\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 181, in handle_events
+    self.send_400_response(msg)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\316\AppData\Local\Programs\Python\Python313\Lib\site-packages\uvicorn\protocols\http\h11_impl.py", line 298, in send_400_response
+    output = self.conn.send(event)
+  File "C:\Users\316\AppData\Local\Programs\Python\Python313\Lib\site-packages\h11\_connection.py", line 538, in send
+    data_list = self.send_with_data_passthrough(event)
+  File "C:\Users\316\AppData\Local\Programs\Python\Python313\Lib\site-packages\h11\_connection.py", line 563, in send_with_data_passthrough
+    self._process_event(self.our_role, event)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\316\AppData\Local\Programs\Python\Python313\Lib\site-packages\h11\_connection.py", line 284, in _process_event
+    self._cstate.process_event(role, type(event), server_switch_event)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\316\AppData\Local\Programs\Python\Python313\Lib\site-packages\h11\_state.py", line 291, in process_event
+    self._fire_event_triggered_transitions(role, _event_type)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\316\AppData\Local\Programs\Python\Python313\Lib\site-packages\h11\_state.py", line 309, in _fire_event_triggered_transitions
+    raise LocalProtocolError(
+    ...<3 lines>...
+    ) from None
+h11._util.LocalProtocolError: can't handle event type Response when role=SERVER and state=CLOSED
+2025-05-24 12:31:30,953 - experiment_automation - WARNING - 未知动作类型: printer_home
+2025-05-24 12:38:00,538 - experiment_automation - WARNING - 未知动作类型: printer_home
+2025-05-24 12:49:15,828 - experiment_automation - WARNING - 未知动作类型: printer_home

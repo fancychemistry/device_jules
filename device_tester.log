@@ -1881,3 +1881,8 @@ NameError: name 'printer_adapter' is not defined. Did you mean: 'PrinterAdapter'
 2025-05-23 23:56:09,807 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
 2025-05-23 23:56:09,808 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
 2025-05-24 00:22:22,099 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 11:16:19,309 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 11:53:08,474 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 12:18:06,836 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 12:32:12,640 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 12:39:51,110 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'

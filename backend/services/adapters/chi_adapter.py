@@ -152,7 +152,8 @@ class CHIAdapter(BaseAdapter):
             
             logger.info(f"CV测试启动成功: {file_name}")
             
-            # 启动监控循环
+            # 启动监控循环前确保监控标志设置为True
+            self.monitoring = True
             asyncio.create_task(self._monitor_loop())
             return True
         except Exception as e:
@@ -217,6 +218,10 @@ class CHIAdapter(BaseAdapter):
             })
             
             logger.info(f"LSV测试启动成功: {file_name}")
+            
+            # 启动监控循环前确保监控标志设置为True
+            self.monitoring = True
+            asyncio.create_task(self._monitor_loop())
             return True
         except Exception as e:
             self._last_error = str(e)
@@ -279,6 +284,10 @@ class CHIAdapter(BaseAdapter):
             })
             
             logger.info(f"IT测试启动成功: {file_name}")
+            
+            # 启动监控循环前确保监控标志设置为True
+            self.monitoring = True
+            asyncio.create_task(self._monitor_loop())
             return True
         except Exception as e:
             self._last_error = str(e)
@@ -347,7 +356,8 @@ class CHIAdapter(BaseAdapter):
             
             logger.info(f"CA测试启动成功: {file_name}")
             
-            # 启动监控循环
+            # 启动监控循环前确保监控标志设置为True
+            self.monitoring = True
             asyncio.create_task(self._monitor_loop())
             return True
         except Exception as e:
@@ -412,6 +422,10 @@ class CHIAdapter(BaseAdapter):
             })
             
             logger.info(f"EIS测试启动成功: {file_name}")
+            
+            # 启动监控循环前确保监控标志设置为True
+            self.monitoring = True
+            asyncio.create_task(self._monitor_loop())
             return True
         except Exception as e:
             self._last_error = str(e)
@@ -482,7 +496,9 @@ class CHIAdapter(BaseAdapter):
             })
             
             logger.info(f"OCP测试启动成功: {file_name}")
-            # 启动监控循环
+            
+            # 启动监控循环前确保监控标志设置为True
+            self.monitoring = True
             asyncio.create_task(self._monitor_loop())
             return True
         except KeyError as e:
@@ -563,7 +579,8 @@ class CHIAdapter(BaseAdapter):
             
             logger.info(f"DPV测试启动成功: {file_name}")
             
-            # 启动监控循环
+            # 启动监控循环前确保监控标志设置为True
+            self.monitoring = True
             asyncio.create_task(self._monitor_loop())
             return True
         except Exception as e:
@@ -634,7 +651,8 @@ class CHIAdapter(BaseAdapter):
             
             logger.info(f"SCV测试启动成功: {file_name}")
             
-            # 启动监控循环
+            # 启动监控循环前确保监控标志设置为True
+            self.monitoring = True
             asyncio.create_task(self._monitor_loop())
             return True
         except Exception as e:
@@ -709,7 +727,8 @@ class CHIAdapter(BaseAdapter):
             
             logger.info(f"CP测试启动成功: {file_name}")
             
-            # 启动监控循环
+            # 启动监控循环前确保监控标志设置为True
+            self.monitoring = True
             asyncio.create_task(self._monitor_loop())
             return True
         except Exception as e:
@@ -781,7 +800,8 @@ class CHIAdapter(BaseAdapter):
             
             logger.info(f"ACV测试启动成功: {file_name}")
             
-            # 启动监控循环
+            # 启动监控循环前确保监控标志设置为True
+            self.monitoring = True
             asyncio.create_task(self._monitor_loop())
             return True
         except Exception as e:
@@ -800,6 +820,9 @@ class CHIAdapter(BaseAdapter):
             停止操作是否成功
         """
         try:
+            # 停止监控循环
+            self.monitoring = False
+            
             # 如果有当前技术实例，使用其stop方法
             if self.current_technique:
                 self.current_technique.stop()
@@ -818,6 +841,7 @@ class CHIAdapter(BaseAdapter):
             # 清理当前测试信息
             self.current_test = None
             self.current_technique = None
+            self.file_name = None
             
             return True
         except Exception as e:
@@ -849,21 +873,22 @@ class CHIAdapter(BaseAdapter):
         """
         # 只有在有正在运行的测试时才检查
         if not self.file_name or not self.current_test:
-            # logger.debug("_check_result_files: No current test or file_name, skipping.") # Optional: for very verbose logging
             return
-            
-        logger.debug(f"_check_result_files: Monitoring for test '{self.current_test}', file_name '{self.file_name}'") # DEBUG LOG
             
         try:
             # 检查.txt文件（原始数据）
             txt_pattern = os.path.join(self.results_base_dir, f"{self.file_name}.txt")
-            logger.debug(f"_check_result_files: Looking for txt file with pattern: {txt_pattern}") # DEBUG LOG
-            txt_files = glob.glob(txt_pattern)
+            logger.debug(f"_check_result_files: Looking for txt file: {txt_pattern}")
             
-            for txt_file in txt_files:
+            # 检查文件是否存在
+            if os.path.exists(txt_pattern):
+                txt_file = txt_pattern
+                
                 # 检查是否是新文件
                 if txt_file not in self.result_files:
+                    logger.info(f"检测到新的CHI数据文件: {txt_file}")
                     self.result_files.append(txt_file)
+                    
                     file_size = os.path.getsize(txt_file)
                     file_mtime = os.path.getmtime(txt_file)
                     
@@ -879,17 +904,26 @@ class CHIAdapter(BaseAdapter):
                     }
                     
                     await self.broadcaster.publish(f"{self.topic}:event", event_data)
-                    logger.info(f"检测到CHI数据文件: {txt_file}")
+                    logger.info(f"发布文件生成事件: {os.path.basename(txt_file)}")
+                
+                # 检查文件是否完成（无论是否是新文件）
+                file_size = os.path.getsize(txt_file)
+                if file_size > 0:
+                    logger.debug(f"文件 {txt_file} 当前大小: {file_size} bytes")
                     
-                    # 如果文件非空且大小稳定，认为测试可能已完成
-                    if file_size > 0:
-                        # 等待一段时间，确认文件大小不再变化
-                        await asyncio.sleep(2)
-                        current_size = os.path.getsize(txt_file)
+                    # 等待一段时间，确认文件大小不再变化
+                    await asyncio.sleep(3)
+                    current_size = os.path.getsize(txt_file)
+                    logger.debug(f"文件 {txt_file} 等待后大小: {current_size} bytes")
+                    
+                    if current_size == file_size:
+                        # 文件大小稳定，再次检查文件最后修改时间
+                        file_mtime = os.path.getmtime(txt_file)
+                        time_since_modified = time.time() - file_mtime
                         
-                        if current_size == file_size:
-                            # 测试可能已完成
-                            logger.info(f"CHI测试可能已完成，文件大小稳定: {txt_file}")
+                        # 如果文件在过去5秒内没有被修改，认为测试完成
+                        if time_since_modified >= 5:
+                            logger.info(f"CHI测试完成检测: 文件大小稳定({file_size} bytes)且修改时间稳定({time_since_modified:.1f}s前)")
                             
                             # 更新状态
                             await self.update_status({
@@ -907,6 +941,26 @@ class CHIAdapter(BaseAdapter):
                             }
                             
                             await self.broadcaster.publish(f"{self.topic}:event", completion_data)
+                            logger.info(f"发布测试完成事件: {self.current_test}")
+                            
+                            # 测试完成，停止监控
+                            self.monitoring = False
+                            
+                            # 清理当前测试信息
+                            self.current_test = None
+                            self.current_technique = None
+                            self.file_name = None
+                            
+                            logger.info(f"CHI测试完成，监控已停止")
+                            return  # 提前返回，避免继续检查
+                        else:
+                            logger.debug(f"文件最近被修改({time_since_modified:.1f}s前)，继续等待")
+                    else:
+                        logger.debug(f"文件大小仍在变化: {file_size} -> {current_size}")
+                else:
+                    logger.debug(f"文件 {txt_file} 大小为0，继续等待")
+            else:
+                logger.debug(f"文件 {txt_pattern} 尚不存在")
             
             # 检查.png文件（图表）
             png_pattern = os.path.join(self.results_base_dir, f"{self.file_name}*.png")

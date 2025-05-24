@@ -3,6 +3,9 @@
 简单的API逻辑测试
 """
 
+import requests
+import json
+
 def test_api_logic():
     """测试API返回值解析逻辑"""
     
@@ -158,4 +161,36 @@ if __name__ == "__main__":
         print("4. ✅ 调试信息：添加详细的API调用日志")
         print("\n下一步：启动系统并测试实际API调用")
     else:
-        print("\n❌ 逻辑测试失败，需要检查代码!") 
+        print("\n❌ 逻辑测试失败，需要检查代码!")
+
+# 检查实验状态
+print("实验状态:")
+try:
+    resp = requests.get('http://localhost:8002/api/experiment/status')
+    status = resp.json()
+    print(f"  状态: {status.get('status')}")
+    print(f"  步骤: {status.get('current_step')}/{status.get('total_steps')}")
+    
+    results = status.get('step_results', [])
+    if results:
+        print("  最新结果:")
+        for r in results[-2:]:
+            print(f"    {r.get('step_id')}: {'✅' if r.get('success') else '❌'} {r.get('message')}")
+except Exception as e:
+    print(f"  错误: {e}")
+
+print("\nCHI状态:")
+try:
+    resp = requests.get('http://localhost:8001/api/chi/status')
+    chi_status = resp.json()
+    print(f"  CHI响应: {chi_status}")
+except Exception as e:
+    print(f"  错误: {e}")
+
+print("\n设备状态:")
+try:
+    resp = requests.get('http://localhost:8001/api/status')
+    device_status = resp.json()
+    print(f"  设备状态: {device_status}")
+except Exception as e:
+    print(f"  错误: {e}") 

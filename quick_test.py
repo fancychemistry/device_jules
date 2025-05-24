@@ -1,90 +1,57 @@
 #!/usr/bin/env python3
-"""
-快速测试实验自动化系统
-"""
+# -*- coding: utf-8 -*-
 
-import asyncio
-import httpx
+import requests
 import time
-from pathlib import Path
+import json
 
-async def test_experiment_system():
-    """测试实验自动化系统"""
-    
-    print("🧪 快速测试实验自动化系统")
-    print("=" * 50)
-    
-    # 检查必要文件
-    required_files = [
-        "experiment_automation.py",
-        "old/experiment_config.json"
-    ]
-    
-    for file_path in required_files:
-        if not Path(file_path).exists():
-            print(f"❌ 缺少文件: {file_path}")
-            return False
-        else:
-            print(f"✅ 文件检查通过: {file_path}")
-    
-    print("\n📁 测试配置文件加载...")
-    
-    # 模拟ExperimentRunner的配置加载逻辑
+def check_experiment_status():
+    """检查实验状态"""
     try:
-        import json
-        with open("old/experiment_config.json", 'r', encoding='utf-8') as f:
-            config = json.load(f)
+        response = requests.get('http://localhost:8002/api/experiment/status')
+        status_data = response.json()
         
-        print(f"✅ 配置加载成功")
-        print(f"📋 项目名: {config.get('project_name')}")
-        print(f"📋 步骤数: {len(config.get('experiment_sequence', []))}")
+        experiment_id = status_data.get("experiment_id", "unknown")
+        status = status_data.get("status", "unknown")
+        current_step = status_data.get("current_step", 0)
+        total_steps = status_data.get("total_steps", 0)
+        progress = status_data.get("progress", 0) * 100
+        step_results = status_data.get("step_results", [])
         
-        # 测试参数解析
-        configurations = config.get("configurations", {})
-        safe_xy = configurations.get("safe_move_xy", [])
-        if isinstance(safe_xy, list) and len(safe_xy) >= 2:
-            print(f"✅ 安全移动坐标: X={safe_xy[0]}, Y={safe_xy[1]}")
-        else:
-            print(f"❌ 安全移动坐标配置有误: {safe_xy}")
-            return False
+        print(f"实验ID: {experiment_id}")
+        print(f"状态: {status}")
+        print(f"进度: {current_step}/{total_steps} ({progress:.1f}%)")
         
-        print(f"✅ 安全移动Z: {configurations.get('safe_move_z_high')}")
+        if step_results:
+            print(f"最近完成的步骤:")
+            for result in step_results[-3:]:  # 显示最近3个步骤
+                step_id = result.get("step_id", "unknown")
+                success = result.get("success", False)
+                message = result.get("message", "")
+                status_icon = "✅" if success else "❌"
+                print(f"  {status_icon} {step_id}: {message}")
+        
+        return status
         
     except Exception as e:
-        print(f"❌ 配置加载失败: {e}")
-        return False
-    
-    print("\n🔧 测试API返回值解析逻辑...")
-    
-    # 模拟device_tester的API返回格式
-    test_responses = [
-        {"error": False, "message": "打印机归位成功"},
-        {"error": True, "message": "打印机未初始化"},
-        {"error": False, "message": "泵送完成"}
-    ]
-    
-    for response in test_responses:
-        success = not response.get("error", True)
-        expected = not response["error"]
-        status = "✅" if success == expected else "❌"
-        print(f"{status} API响应解析: {response} -> success={success}")
-    
-    print("\n📊 总结:")
-    print("✅ 所有基础功能测试通过")
-    print("💡 主要修复:")
-    print("   1. 修复API返回值判断逻辑")
-    print("   2. 支持数组索引参数解析")
-    print("   3. 减少调试信息干扰")
-    
-    return True
+        print(f"检查状态失败: {e}")
+        return "error"
 
 if __name__ == "__main__":
-    success = asyncio.run(test_experiment_system())
-    if success:
-        print("\n🎉 系统修复验证完成，可以正常使用!")
-        print("📖 使用说明:")
-        print("   1. 启动: python experiment_automation.py")
-        print("   2. 访问: http://localhost:8002")
-        print("   3. 加载配置并开始实验")
-    else:
-        print("\n❌ 发现问题，需要进一步检查") 
+    print("🧪 实验状态监控")
+    print("=" * 50)
+    
+    for i in range(30):  # 监控30次，每次间隔5秒
+        print(f"\n📊 第 {i+1} 次检查:")
+        status = check_experiment_status()
+        
+        if status in ["completed", "error"]:
+            print(f"\n🏁 实验结束: {status}")
+            break
+        
+        if i < 29:  # 不是最后一次检查
+            print("等待5秒后再次检查...")
+            time.sleep(5)
+    
+    print("\n" + "=" * 50)
+    print("监控结束") 

@@ -56,7 +56,11 @@ def test_experiment():
     try:
         response = requests.post(f"{automation_url}/api/experiment/load_config", 
                                json={"config_path": "old/experiment_config.json"})
-        print(f"📋 配置加载: {response.json()}")
+        result = response.json()
+        print(f"📋 配置加载: {result}")
+        if not result.get("success", False):
+            print(f"❌ 配置加载失败: {result.get('message')}")
+            return False
         time.sleep(1)
     except Exception as e:
         print(f"❌ 配置加载失败: {e}")
@@ -65,22 +69,54 @@ def test_experiment():
     # 开始实验
     try:
         response = requests.post(f"{automation_url}/api/experiment/start")
-        print(f"🚀 实验开始: {response.json()}")
+        result = response.json()
+        print(f"🚀 实验开始: {result}")
+        
+        if not result.get("success", False):
+            print(f"❌ 实验启动失败: {result.get('message')}")
+            return False
         
         # 监控实验状态
-        for i in range(60):  # 监控60次，每次间隔5秒
+        for i in range(120):  # 监控120次，每次间隔5秒（总共10分钟）
             time.sleep(5)
             try:
                 status_response = requests.get(f"{automation_url}/api/experiment/status")
-                status = status_response.json()
+                status_data = status_response.json()
                 
-                print(f"📊 实验状态 ({i+1}/60): {status.get('status')} - 步骤 {status.get('current_step', 0)}/{status.get('total_steps', 0)}")
+                if not status_data.get("success", False):
+                    print(f"❌ 获取状态失败: {status_data.get('message')}")
+                    continue
                 
-                if status.get('status') in ['completed', 'error']:
-                    print(f"🏁 实验结束: {status.get('status')}")
-                    if status.get('status') == 'error':
+                status = status_data.get("status", {})
+                experiment_status = status.get("status", "unknown")
+                current_step = status.get("current_step", 0)
+                total_steps = status.get("total_steps", 0)
+                step_results = status.get("step_results", [])
+                
+                print(f"📊 实验状态 ({i+1}/120): {experiment_status} - 步骤 {current_step}/{total_steps}")
+                
+                # 显示最新的步骤结果
+                if step_results:
+                    latest_result = step_results[-1]
+                    step_id = latest_result.get("step_id", "未知")
+                    success = latest_result.get("success", False)
+                    message = latest_result.get("message", "")
+                    
+                    if success:
+                        print(f"  ✅ 最新步骤 {step_id}: {message}")
+                    else:
+                        print(f"  ❌ 最新步骤 {step_id}: {message}")
+                
+                if experiment_status in ['completed', 'error']:
+                    print(f"🏁 实验结束: {experiment_status}")
+                    if experiment_status == 'error':
                         print(f"❌ 错误信息: {status.get('error', '未知错误')}")
-                    return status.get('status') == 'completed'
+                        # 显示所有失败的步骤
+                        print("❌ 失败步骤详情:")
+                        for result in step_results:
+                            if not result.get("success", False):
+                                print(f"  - {result.get('step_id')}: {result.get('message')}")
+                    return experiment_status == 'completed'
                     
             except Exception as e:
                 print(f"❌ 状态检查失败: {e}")
