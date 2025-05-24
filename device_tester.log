@@ -1901,3 +1901,56 @@ NameError: name 'printer_adapter' is not defined. Did you mean: 'PrinterAdapter'
 2025-05-24 14:53:13,698 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
 2025-05-24 14:58:23,769 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
 2025-05-24 14:58:23,769 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
+2025-05-24 15:50:42,741 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
+2025-05-24 15:50:42,751 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
+2025-05-24 15:56:07,816 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 16:00:30,075 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 16:12:52,818 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 17:44:14,955 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 17:44:32,328 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 17:44:37,464 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 17:44:53,255 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 17:47:29,672 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 17:55:56,504 - device_tester - INFO - 成功导入MoonrakerWebsocketListener，将使用WebSocket获取精确泵参数
+2025-05-24 17:55:58,758 - device_tester - INFO - 已加载配置文件
+2025-05-24 17:55:58,762 - device_tester - INFO - 硬件修复版设备测试器启动，Moonraker地址=http://192.168.51.168:7125
+2025-05-24 17:55:59,082 - device_tester - INFO - Moonraker连接正常，Klipper状态: ready
+2025-05-24 17:58:07,374 - device_tester - INFO - 成功导入MoonrakerWebsocketListener，将使用WebSocket获取精确泵参数
+2025-05-24 17:58:09,467 - device_tester - INFO - 已加载配置文件
+2025-05-24 17:58:09,468 - device_tester - INFO - 硬件修复版设备测试器启动，Moonraker地址=http://192.168.51.168:7125
+2025-05-24 17:58:09,614 - device_tester - INFO - Moonraker连接正常，Klipper状态: ready
+2025-05-24 18:00:57,118 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 18:01:04,169 - device_tester - INFO - 硬件修复版设备测试器正在关闭...
+2025-05-24 18:01:14,588 - device_tester - INFO - 硬件修复版设备测试器正在关闭...
+2025-05-24 18:01:20,609 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 18:02:58,932 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 18:07:13,057 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 18:09:11,486 - device_tester - INFO - 成功导入MoonrakerWebsocketListener，将使用WebSocket获取精确泵参数
+2025-05-24 18:09:13,584 - device_tester - INFO - 已加载配置文件
+2025-05-24 18:09:13,585 - device_tester - INFO - 硬件修复版设备测试器启动，Moonraker地址=http://192.168.51.168:7125
+2025-05-24 18:09:13,799 - device_tester - INFO - Moonraker连接正常，Klipper状态: ready
+2025-05-24 18:09:28,539 - device_tester - INFO - 开始初始化打印机适配器...
+2025-05-24 18:09:28,666 - device_tester - INFO - 打印机适配器已创建，连接到 http://192.168.51.168:7125
+2025-05-24 18:09:28,808 - device_tester - INFO - 获取到当前位置: {'x': 0.0, 'y': 0.0, 'z': 0.4575}
+2025-05-24 18:09:28,808 - device_tester - INFO - 打印机初始化成功
+2025-05-24 18:09:28,808 - device_tester - INFO - 打印机适配器初始化成功
+2025-05-24 18:09:31,008 - device_tester - INFO - 开始执行打印机归位...
+2025-05-24 18:09:31,009 - device_tester - INFO - 开始执行打印机归位...
+2025-05-24 18:09:35,014 - device_tester - INFO - 归位命令已发送，立即返回成功
+2025-05-24 18:09:35,014 - device_tester - INFO - 打印机归位命令发送完成
+2025-05-24 18:09:35,014 - device_tester - INFO - 打印机归位完成
+2025-05-24 18:09:37,097 - device_tester - INFO - 归位后位置更新: {'x': 0.0, 'y': 0.0, 'z': 0.46}
+2025-05-24 18:10:08,101 - device_tester - INFO - 开始初始化打印机适配器...
+2025-05-24 18:10:08,102 - device_tester - INFO - 打印机适配器已创建，连接到 http://192.168.51.168:7125
+2025-05-24 18:10:08,165 - device_tester - INFO - 获取到当前位置: {'x': 0.0, 'y': 0.0, 'z': 0.46}
+2025-05-24 18:10:08,166 - device_tester - INFO - 打印机初始化成功
+2025-05-24 18:10:08,166 - device_tester - INFO - 打印机适配器初始化成功
+2025-05-24 18:10:10,480 - device_tester - INFO - 开始执行打印机归位...
+2025-05-24 18:10:10,480 - device_tester - INFO - 开始执行打印机归位...
+2025-05-24 18:10:14,469 - device_tester - INFO - 归位命令已发送，立即返回成功
+2025-05-24 18:10:14,469 - device_tester - INFO - 打印机归位命令发送完成
+2025-05-24 18:10:14,469 - device_tester - INFO - 打印机归位完成
+2025-05-24 18:10:16,688 - device_tester - INFO - 归位后位置更新: {'x': 0.0, 'y': 0.0, 'z': 0.4575}
+2025-05-24 18:15:05,959 - device_tester - INFO - 硬件修复版设备测试器正在关闭...
+2025-05-24 22:07:26,469 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 22:07:29,083 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）

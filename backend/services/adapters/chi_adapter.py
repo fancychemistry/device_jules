@@ -79,6 +79,31 @@ class CHIAdapter(BaseAdapter):
             logger.error(f"CHI初始化失败: {e}", exc_info=True)
             return False
     
+    async def close(self):
+        """关闭CHI连接并清理资源"""
+        try:
+            # 停止当前运行的测试
+            if self._status.get("status") == CHIStatus.RUNNING:
+                await self.stop_test()
+            
+            # 停止监控
+            self.monitoring = False
+            
+            # 清理资源
+            self.chi_setup = None
+            self.current_test = None
+            self.current_technique = None
+            self.start_time = None
+            self.test_params = None
+            self.file_name = None
+            self.project_name = None
+            self.result_files = []
+            
+            logger.info("CHI适配器已关闭")
+            
+        except Exception as e:
+            logger.error(f"关闭CHI适配器时出错: {e}", exc_info=True)
+    
     async def get_status(self) -> Dict[str, Any]:
         """获取当前CHI状态
         
@@ -905,7 +930,7 @@ class CHIAdapter(BaseAdapter):
                     
                     await self.broadcaster.publish(f"{self.topic}:event", event_data)
                     logger.info(f"发布文件生成事件: {os.path.basename(txt_file)}")
-                
+                    
                 # 检查文件是否完成（无论是否是新文件）
                 file_size = os.path.getsize(txt_file)
                 if file_size > 0:

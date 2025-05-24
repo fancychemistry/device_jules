@@ -45,3 +45,4 @@ h11._util.LocalProtocolError: can't handle event type Response when role=SERVER 
 2025-05-24 13:01:57,302 - experiment_automation - WARNING - 未知动作类型: printer_home
 2025-05-24 13:05:48,147 - experiment_automation - WARNING - 未知动作类型: printer_home
 2025-05-24 14:11:17,964 - experiment_automation - ERROR - 电压循环步骤失败: IT_LOOP_PUMP_FRESH_ELECTROLYTE, 电压=-1.3V
+2025-05-24 16:16:07,990 - experiment_automation - ERROR - 步骤 INIT_00_HOME_PRINTER 执行异常: module 'httpx' has no attribute 'TimeoutError'

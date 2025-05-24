@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 import httpx
 import re
+import glob
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -38,6 +39,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# WebSocket连接管理
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+    
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+    
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        try:
+            await websocket.send_text(message)
+        except:
+            pass
+    
+    async def broadcast(self, message: dict):
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except:
+                # 连接已断开，标记为删除
+                disconnected.append(connection)
+        
+        # 移除断开的连接
+        for conn in disconnected:
+            if conn in self.active_connections:
+                self.active_connections.remove(conn)
+
+manager = ConnectionManager()
+
 class ExperimentRunner:
     """简化的实验执行器，直接调用device_tester的API"""
     
@@ -58,7 +94,7 @@ class ExperimentRunner:
         self.experiment_start_time = None  # 新增：实验开始时间
         
     def add_log(self, message: str, level: str = "INFO"):
-        """添加日志"""
+        """添加日志并实时推送到前端"""
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         log_entry = {
             "timestamp": timestamp,
@@ -75,6 +111,19 @@ class ExperimentRunner:
         # 打印到控制台
         print(f"[{timestamp}] [{level}] {message}")
         
+        # 实时推送到前端WebSocket
+        asyncio.create_task(self._broadcast_log(log_entry))
+    
+    async def _broadcast_log(self, log_entry: dict):
+        """广播日志到WebSocket连接"""
+        try:
+            await manager.broadcast({
+                "type": "log",
+                "data": log_entry
+            })
+        except Exception as e:
+            print(f"广播日志失败: {e}")
+    
     def get_experiment_summary(self) -> Dict[str, Any]:
         """获取实验摘要信息（用于状态恢复）"""
         return {
@@ -318,6 +367,30 @@ class ExperimentRunner:
                         result = response.json()
                         if not result.get("error", True):
                             print("✅ CHI初始化成功")
+                            
+                            # 设置CHI工作目录到项目文件夹的chi_data子目录
+                            chi_working_dir = self.experiment_config.get("chi_working_directory")
+                            if chi_working_dir:
+                                print(f"🔧 设置CHI工作目录: {chi_working_dir}")
+                                try:
+                                    dir_response = await client.post(
+                                        f"{self.device_tester_url}/api/chi/set_working_directory",
+                                        json={"working_directory": chi_working_dir}
+                                    )
+                                    if dir_response.status_code == 200:
+                                        dir_result = dir_response.json()
+                                        if not dir_result.get("error", True):
+                                            print(f"✅ CHI工作目录设置成功: {chi_working_dir}")
+                                            self.add_log(f"CHI工作目录设置为: {chi_working_dir}")
+                                        else:
+                                            print(f"⚠️ CHI工作目录设置失败: {dir_result.get('message')}")
+                                            self.add_log(f"CHI工作目录设置失败: {dir_result.get('message')}", "WARNING")
+                                    else:
+                                        print(f"⚠️ CHI工作目录设置HTTP错误: {dir_response.status_code}")
+                                        self.add_log(f"CHI工作目录设置HTTP错误: {dir_response.status_code}", "WARNING")
+                                except Exception as dir_error:
+                                    print(f"⚠️ 设置CHI工作目录时出现异常: {dir_error}")
+                                    self.add_log(f"设置CHI工作目录异常: {dir_error}", "WARNING")
                         else:
                             print(f"⚠️ CHI初始化失败，但继续实验: {result.get('message')}")
                     else:
@@ -796,10 +869,11 @@ class ExperimentRunner:
         """
         try:
             start_time = time.time()
-            last_progress = 0
-            total_duration = None
+            last_progress = -1
+            last_status_time = time.time()
+            stable_completed_count = 0  # 稳定完成状态计数
             
-            print(f"🔧 开始监控泵送状态，最大等待时间: {max_wait_time}秒")
+            self.add_log(f"开始监控泵送状态，最大等待时间: {max_wait_time}秒")
             
             while time.time() - start_time < max_wait_time:
                 try:
@@ -808,7 +882,7 @@ class ExperimentRunner:
                         response = await client.get(f"{self.device_tester_url}/api/pump/status")
                         
                         if response.status_code != 200:
-                            print(f"⚠️ 获取泵送状态失败，HTTP状态码: {response.status_code}")
+                            self.add_log(f"获取泵送状态失败，HTTP状态码: {response.status_code}", "WARNING")
                             await asyncio.sleep(2)
                             continue
                         
@@ -816,7 +890,7 @@ class ExperimentRunner:
                         parsed_result = self._parse_api_response(result)
                         
                         if not parsed_result["success"]:
-                            print(f"⚠️ 泵送状态API返回错误: {parsed_result['message']}")
+                            self.add_log(f"泵送状态API返回错误: {parsed_result['message']}", "WARNING")
                             await asyncio.sleep(2)
                             continue
                         
@@ -827,40 +901,83 @@ class ExperimentRunner:
                         total_duration = status.get("total_duration_seconds", 0)
                         
                         # 显示进度信息
-                        if progress != last_progress or int(time.time()) % 10 == 0:  # 每10秒或进度变化时显示
+                        if progress != last_progress or int(time.time() - last_status_time) >= 5:  # 每5秒或进度变化时显示
                             progress_percent = progress * 100
-                            print(f"🔧 泵送进度: {progress_percent:.1f}% ({elapsed_time:.1f}s / {total_duration:.1f}s)")
+                            self.add_log(f"泵送进度: {progress_percent:.1f}% ({elapsed_time:.1f}s / {total_duration:.1f}s), 运行中: {running}")
                             last_progress = progress
+                            last_status_time = time.time()
                         
                         # 检查是否完成
                         if not running:
-                            if progress >= 0.99:  # 进度接近100%认为成功完成
-                                elapsed = time.time() - start_time
-                                return {
-                                    "success": True, 
-                                    "message": f"泵送成功完成，用时 {elapsed:.1f}秒，最终进度 {progress*100:.1f}%"
-                                }
+                            if progress >= 0.98:  # 进度接近100%认为成功完成
+                                stable_completed_count += 1
+                                self.add_log(f"泵送完成检测 (第{stable_completed_count}次): 进度 {progress*100:.1f}%, 未运行")
+                                
+                                # 需要连续3次检测到完成状态才确认
+                                if stable_completed_count >= 3:
+                                    elapsed = time.time() - start_time
+                                    self.add_log(f"泵送确认完成，用时 {elapsed:.1f}秒，最终进度 {progress*100:.1f}%")
+                                    # 额外等待2秒确保泵送完全停止
+                                    self.add_log("额外等待2秒确保泵送完全停止...")
+                                    await asyncio.sleep(2)
+                                    return {
+                                        "success": True, 
+                                        "message": f"泵送成功完成，用时 {elapsed:.1f}秒，最终进度 {progress*100:.1f}%"
+                                    }
                             else:
+                                stable_completed_count = 0  # 重置计数
+                                self.add_log(f"泵送停止但进度不足: {progress*100:.1f}%", "WARNING")
                                 return {
                                     "success": False,
                                     "message": f"泵送提前停止，最终进度 {progress*100:.1f}%"
                                 }
-                        
-                        # 检查是否超过预期时间太多
-                        if total_duration > 0 and elapsed_time > total_duration * 1.5:
-                            print(f"⚠️ 泵送时间超过预期，可能存在问题")
+                        else:
+                            # 泵送仍在运行，重置完成计数
+                            stable_completed_count = 0
+                            
+                            # 检查是否超过预期时间太多
+                            if total_duration > 0 and elapsed_time > total_duration * 1.8:
+                                self.add_log(f"泵送时间超过预期80%，可能存在问题", "WARNING")
                         
                 except Exception as status_error:
-                    print(f"⚠️ 获取泵送状态时出现异常: {status_error}")
+                    self.add_log(f"获取泵送状态时出现异常: {status_error}", "WARNING")
+                    stable_completed_count = 0  # 重置计数
                 
                 # 等待间隔
-                await asyncio.sleep(1)
+                await asyncio.sleep(1.5)
             
             # 超时处理
             elapsed = time.time() - start_time
+            self.add_log(f"泵送监控超时 ({elapsed:.1f}s)，尝试最终状态检查", "WARNING")
+            
+            # 最终检查
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.get(f"{self.device_tester_url}/api/pump/status")
+                    if response.status_code == 200:
+                        result = response.json()
+                        status = result.get("status", {})
+                        running = status.get("running", False)
+                        progress = status.get("progress", 0)
+                        
+                        if not running and progress >= 0.95:
+                            self.add_log(f"超时后最终检查：泵送已完成，进度 {progress*100:.1f}%")
+                            return {
+                                "success": True,
+                                "message": f"泵送超时但最终完成，进度 {progress*100:.1f}%"
+                            }
+                        else:
+                            self.add_log(f"超时后最终检查：泵送未完成，运行中: {running}, 进度: {progress*100:.1f}%", "WARNING")
+                            return {
+                                "success": False,
+                                "message": f"泵送监控超时且未完成，运行中: {running}, 进度: {progress*100:.1f}%"
+                            }
+            except Exception as e:
+                self.add_log(f"最终泵送状态检查失败: {e}", "WARNING")
+            
             return {
                 "success": False,
-                "message": f"泵送监控超时 ({elapsed:.1f}s)，请检查泵送是否正常完成"
+                "message": f"泵送监控超时 ({elapsed:.1f}s)，无法确认完成状态"
             }
             
         except Exception as e:
@@ -1080,13 +1197,14 @@ class ExperimentRunner:
         Returns:
             包含success和message的字典
         """
-        max_wait = 300  # 5分钟最大等待时间
+        max_wait = 600  # 10分钟最大等待时间
         wait_time = 0
         last_status = None
         consecutive_completed_count = 0  # 连续检测到完成状态的次数
         required_consecutive = 3  # 需要连续检测到完成状态的次数
+        file_stable_checks = 0  # 文件稳定性检查次数
         
-        print(f"🔧 等待CHI测试完成，最大等待时间: {max_wait}秒")
+        self.add_log(f"等待CHI测试完成，最大等待时间: {max_wait}秒")
         
         while wait_time < max_wait:
             try:
@@ -1094,79 +1212,71 @@ class ExperimentRunner:
                     response = await client.get(f"{self.device_tester_url}/api/chi/status")
                     result = response.json()
                     
-                    success = not result.get("error", True)
-                    if success:
-                        status = result.get("status", {})
-                        chi_status = status.get("status", "unknown")
-                        test_type = status.get("test_type", "unknown")
-                        elapsed_seconds = status.get("elapsed_seconds", 0)
+                    if result.get("error"):
+                        self.add_log(f"CHI状态查询错误: {result.get('message')}", "ERROR")
+                        return {"success": False, "message": f"CHI状态查询错误: {result.get('message')}"}
+                    
+                    current_status = result.get("status", "unknown")
+                    test_type = result.get("test_type", "unknown")
+                    
+                    # 记录状态变化
+                    if current_status != last_status:
+                        self.add_log(f"CHI状态变化: {last_status} -> {current_status} (测试类型: {test_type})")
+                        last_status = current_status
+                        consecutive_completed_count = 0  # 重置计数器
+                    
+                    # 检查是否完成
+                    if current_status in ["completed", "idle"]:
+                        consecutive_completed_count += 1
+                        self.add_log(f"检测到完成状态 ({consecutive_completed_count}/{required_consecutive})")
                         
-                        # 显示进度信息
-                        if chi_status != last_status or int(wait_time) % 15 == 0:  # 每15秒或状态变化时显示
-                            print(f"🔧 CHI状态: {chi_status}, 测试类型: {test_type}, 已运行: {elapsed_seconds:.1f}秒")
-                            last_status = chi_status
-                        
-                        # 检查是否完成 - 扩展状态检查
-                        if chi_status in ["idle", "completed", "finished", "stopped"]:
-                            consecutive_completed_count += 1
-                            print(f"🔧 检测到完成状态: {chi_status} (连续第{consecutive_completed_count}次)")
-                            
-                            if consecutive_completed_count >= required_consecutive:
-                                print(f"✅ CHI测试确认完成，最终状态: {chi_status}")
-                                # 额外等待确保文件保存完成
-                                await asyncio.sleep(2)
-                                return {"success": True, "message": f"CHI测试完成，状态: {chi_status}"}
-                        elif chi_status == "error":
-                            print(f"❌ CHI测试出现错误，最终状态: {chi_status}")
-                            return {"success": False, "message": f"CHI测试失败，状态: {chi_status}"}
-                        elif chi_status == "running":
-                            # 重置连续完成计数
-                            consecutive_completed_count = 0
-                            # 对于运行状态，检查是否运行时间合理
-                            if elapsed_seconds > 300:  # 运行超过5分钟，给出警告但继续等待
-                                print(f"⚠️ CHI测试运行时间较长({elapsed_seconds:.1f}秒)，可能是长时间测试")
-                        else:
-                            # 对于其他未知状态，重置计数
-                            consecutive_completed_count = 0
+                        if consecutive_completed_count >= required_consecutive:
+                            # 额外检查：确认文件已生成
+                            try:
+                                files_response = await client.get(f"{self.device_tester_url}/api/chi/results")
+                                if files_response.status_code == 200:
+                                    files_result = files_response.json()
+                                    if not files_result.get("error") and files_result.get("files"):
+                                        file_count = len(files_result.get("files", []))
+                                        self.add_log(f"✅ CHI测试完成，生成了 {file_count} 个结果文件")
+                                        return {"success": True, "message": f"CHI测试完成，生成了 {file_count} 个结果文件"}
+                                    else:
+                                        self.add_log("⚠️ CHI状态显示完成但未找到结果文件，继续等待...")
+                                        consecutive_completed_count = 0  # 重置计数器
+                                else:
+                                    self.add_log("⚠️ 无法获取CHI结果文件列表，继续等待...")
+                                    consecutive_completed_count = 0
+                            except Exception as e:
+                                self.add_log(f"⚠️ 检查CHI结果文件时出错: {e}，继续等待...")
+                                consecutive_completed_count = 0
+                    
+                    elif current_status == "error":
+                        error_msg = result.get("error", "未知错误")
+                        self.add_log(f"❌ CHI测试出错: {error_msg}", "ERROR")
+                        return {"success": False, "message": f"CHI测试出错: {error_msg}"}
+                    
+                    elif current_status == "running":
+                        # 测试正在运行，显示进度信息
+                        elapsed = result.get("elapsed_seconds", 0)
+                        if elapsed > 0:
+                            self.add_log(f"CHI测试运行中... 已运行 {elapsed:.1f} 秒")
+                        consecutive_completed_count = 0  # 重置计数器
+                    
                     else:
-                        print(f"⚠️ 获取CHI状态失败: {result.get('message', '未知错误')}")
+                        # 其他状态
+                        self.add_log(f"CHI状态: {current_status}")
                         consecutive_completed_count = 0
                 
-                await asyncio.sleep(2)  # 检查间隔2秒
-                wait_time += 2
-                
             except Exception as e:
-                print(f"⚠️ 检查CHI状态时出现异常: {e}")
-                consecutive_completed_count = 0
-                await asyncio.sleep(2)
-                wait_time += 2
+                self.add_log(f"检查CHI状态时出错: {e}", "WARNING")
+            
+            # 等待间隔
+            await asyncio.sleep(5)  # 每5秒检查一次
+            wait_time += 5
         
-        # 超时处理
-        print(f"⏰ CHI测试等待超时({max_wait}秒)")
-        
-        # 最后再检查一次状态
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.device_tester_url}/api/chi/status")
-                result = response.json()
-                
-                if not result.get("error", True):
-                    status = result.get("status", {})
-                    chi_status = status.get("status", "unknown")
-                    
-                    if chi_status in ["idle", "completed", "finished", "stopped"]:
-                        print(f"🔧 超时后最终检查：CHI已完成，状态: {chi_status}")
-                        return {"success": True, "message": f"CHI测试超时但最终完成，状态: {chi_status}"}
-                    else:
-                        print(f"⚠️ 超时后最终检查：CHI仍在运行，状态: {chi_status}")
-                        # 即使超时也认为成功，让实验继续进行
-                        return {"success": True, "message": f"CHI测试超时但继续，状态: {chi_status}"}
-        except Exception as e:
-            print(f"⚠️ 最终状态检查失败: {e}")
-        
-        # 即使超时也认为成功，让实验继续进行
-        print(f"🔧 CHI测试超时但假设完成，继续下一个测试")
-        return {"success": True, "message": f"CHI测试等待超时({max_wait}秒)，假设已完成"}
+        # 超时
+        self.add_log(f"❌ CHI测试等待超时 ({max_wait}秒)", "ERROR")
+        return {"success": False, "message": f"CHI测试等待超时 ({max_wait}秒)"}
     
     async def _execute_voltage_loop(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
         """执行电压循环"""
@@ -1420,6 +1530,17 @@ class ExperimentRunner:
 # 全局实验运行器实例
 experiment_runner = ExperimentRunner()
 
+# WebSocket路由
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # 保持连接活动
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
 # API 路由
 @app.get("/", response_class=HTMLResponse)
 async def get_experiment_control_page():
@@ -1583,28 +1704,83 @@ async def get_experiment_control_page():
             let wsConnection = null;
             let experimentSteps = [];
 
-            // 连接WebSocket（可选，用于实时状态更新）
+            // 连接WebSocket进行实时更新
             function connectWebSocket() {
                 try {
-                    wsConnection = new WebSocket('ws://localhost:8001/ws');
+                    wsConnection = new WebSocket('ws://localhost:8002/ws');
+                    
+                    wsConnection.onopen = function(event) {
+                        console.log('WebSocket连接已建立');
+                        addLogToUI('[系统] WebSocket连接已建立', 'INFO');
+                    };
+                    
                     wsConnection.onmessage = function(event) {
                         const data = JSON.parse(event.data);
-                        if (data.type === 'experiment_status') {
-                            updateExperimentStatus(data.status);
+                        if (data.type === 'log') {
+                            // 实时日志
+                            addLogToUI(data.data.message, data.data.level, data.data.timestamp);
+                        } else if (data.type === 'experiment_status') {
+                            // 实验状态更新
+                            updateExperimentStatus(data.data);
                         }
+                    };
+                    
+                    wsConnection.onclose = function(event) {
+                        console.log('WebSocket连接已关闭');
+                        addLogToUI('[系统] WebSocket连接已关闭', 'WARNING');
+                        // 5秒后尝试重连
+                        setTimeout(connectWebSocket, 5000);
+                    };
+                    
+                    wsConnection.onerror = function(error) {
+                        console.error('WebSocket错误:', error);
+                        addLogToUI('[系统] WebSocket连接错误', 'ERROR');
                     };
                 } catch (error) {
                     console.log('WebSocket连接失败:', error);
+                    addLogToUI('[系统] WebSocket连接失败: ' + error.message, 'ERROR');
+                    // 5秒后重试
+                    setTimeout(connectWebSocket, 5000);
+                }
+            }
+
+            // 添加日志到界面
+            function addLogToUI(message, level = 'INFO', timestamp = null) {
+                const logContainer = document.getElementById('log-container');
+                const logTimestamp = timestamp || new Date().toLocaleTimeString();
+                
+                const logClass = 'log-level-' + level;
+                const logEntry = document.createElement('div');
+                logEntry.className = 'log-entry ' + logClass;
+                logEntry.innerHTML = `<span class="log-timestamp">[${logTimestamp}]</span> <span class="${logClass}">[${level}]</span> ${message}`;
+                
+                logContainer.appendChild(logEntry);
+                logContainer.scrollTop = logContainer.scrollHeight;
+                
+                // 限制日志条数，保持最新500条
+                const logs = logContainer.querySelectorAll('.log-entry');
+                if (logs.length > 500) {
+                    for (let i = 0; i < logs.length - 500; i++) {
+                        logs[i].remove();
+                    }
                 }
             }
 
             // 加载配置
             async function loadConfig() {
                 try {
+                    const projectName = document.getElementById('project-name-input').value.trim();
+                    const configPath = document.getElementById('config-path-input').value.trim();
+                    
+                    const requestData = { config_path: configPath };
+                    if (projectName) {
+                        requestData.project_name = projectName;
+                    }
+                    
                     const response = await fetch('/api/experiment/load_config', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ config_path: 'old/experiment_config.json' })
+                        body: JSON.stringify(requestData)
                     });
                     
                     const result = await response.json();
@@ -1613,12 +1789,17 @@ async def get_experiment_control_page():
                         updateStepsList();
                         document.getElementById('start-btn').disabled = false;
                         document.getElementById('total-steps').textContent = experimentSteps.length;
-                        addLog('✅ 配置文件加载成功，共 ' + experimentSteps.length + ' 个步骤');
+                        
+                        // 更新项目信息显示
+                        document.getElementById('project-name-display').textContent = result.project_name;
+                        document.getElementById('project-folder-display').textContent = result.project_folder;
+                        
+                        addLogToUI('✅ 配置文件加载成功，共 ' + experimentSteps.length + ' 个步骤', 'INFO');
                     } else {
-                        addLog('❌ 配置文件加载失败: ' + result.message);
+                        addLogToUI('❌ 配置文件加载失败: ' + result.message, 'ERROR');
                     }
                 } catch (error) {
-                    addLog('❌ 加载配置时发生错误: ' + error.message);
+                    addLogToUI('❌ 加载配置时发生错误: ' + error.message, 'ERROR');
                 }
             }
 
@@ -1631,15 +1812,16 @@ async def get_experiment_control_page():
                     if (result.success) {
                         document.getElementById('start-btn').disabled = true;
                         document.getElementById('stop-btn').disabled = false;
-                        addLog('🚀 实验已启动: ' + result.experiment_id);
+                        document.getElementById('experiment-id-display').textContent = result.experiment_id;
+                        addLogToUI('🚀 实验已启动: ' + result.experiment_id, 'INFO');
                         
                         // 开始轮询状态
                         startStatusPolling();
                     } else {
-                        addLog('❌ 实验启动失败: ' + result.message);
+                        addLogToUI('❌ 实验启动失败: ' + result.message, 'ERROR');
                     }
                 } catch (error) {
-                    addLog('❌ 启动实验时发生错误: ' + error.message);
+                    addLogToUI('❌ 启动实验时发生错误: ' + error.message, 'ERROR');
                 }
             }
 
@@ -1652,13 +1834,13 @@ async def get_experiment_control_page():
                     if (result.success) {
                         document.getElementById('start-btn').disabled = false;
                         document.getElementById('stop-btn').disabled = true;
-                        addLog('⏹ 实验已停止');
+                        addLogToUI('⏹ 实验已停止', 'INFO');
                         stopStatusPolling();
                     } else {
-                        addLog('❌ 停止实验失败: ' + result.message);
+                        addLogToUI('❌ 停止实验失败: ' + result.message, 'ERROR');
                     }
                 } catch (error) {
-                    addLog('❌ 停止实验时发生错误: ' + error.message);
+                    addLogToUI('❌ 停止实验时发生错误: ' + error.message, 'ERROR');
                 }
             }
 
@@ -1684,9 +1866,24 @@ async def get_experiment_control_page():
                 document.getElementById('current-step').textContent = status.current_step;
                 document.getElementById('total-steps').textContent = status.total_steps;
                 
+                // 更新当前步骤信息
+                document.getElementById('current-step-name').textContent = status.current_step_name || '无';
+                document.getElementById('current-step-description').textContent = status.current_step_description || '无';
+                
                 const progress = Math.round(status.progress * 100);
                 document.getElementById('progress-percent').textContent = progress + '%';
                 document.getElementById('progress-bar').style.width = progress + '%';
+                document.getElementById('progress-text').textContent = progress + '%';
+                
+                // 更新运行时间
+                if (status.runtime_seconds) {
+                    const hours = Math.floor(status.runtime_seconds / 3600);
+                    const minutes = Math.floor((status.runtime_seconds % 3600) / 60);
+                    const seconds = Math.floor(status.runtime_seconds % 60);
+                    const timeStr = hours > 0 ? `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}` : 
+                                              `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    document.getElementById('runtime').textContent = timeStr;
+                }
                 
                 // 更新步骤状态
                 if (status.current_step > 0) {
@@ -1727,7 +1924,7 @@ async def get_experiment_control_page():
                     } catch (error) {
                         console.error('获取状态失败:', error);
                     }
-                }, 2000);
+                }, 3000);  // 3秒轮询一次
             }
 
             function stopStatusPolling() {
@@ -1737,18 +1934,26 @@ async def get_experiment_control_page():
                 }
             }
 
-            // 添加日志
-            function addLog(message) {
-                const logContainer = document.getElementById('log-container');
-                const timestamp = new Date().toLocaleTimeString();
-                logContainer.innerHTML += `[${timestamp}] ${message}\\n`;
-                logContainer.scrollTop = logContainer.scrollHeight;
-            }
-
             // 页面加载时初始化
             window.onload = function() {
                 connectWebSocket();
-                addLog('🌟 实验控制台已启动');
+                addLogToUI('🌟 实验控制台已启动', 'INFO');
+                
+                // 检查是否有正在运行的实验
+                fetch('/api/experiment/status')
+                    .then(response => response.json())
+                    .then(status => {
+                        if (status.status === 'running') {
+                            addLogToUI('📋 检测到正在运行的实验，恢复状态监控', 'INFO');
+                            document.getElementById('start-btn').disabled = true;
+                            document.getElementById('stop-btn').disabled = false;
+                            startStatusPolling();
+                        }
+                        updateExperimentStatus(status);
+                    })
+                    .catch(error => {
+                        console.error('获取初始状态失败:', error);
+                    });
             };
         </script>
     </body>

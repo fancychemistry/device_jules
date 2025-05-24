@@ -399,7 +399,7 @@ async def move_printer(position: Dict[str, float]):
 
 # 移动到网格位置
 @app.post("/api/printer/grid")
-async def move_to_grid(data: GridMoveRequest): # 使用Pydantic模型进行类型验证
+async def move_to_grid(data: GridMoveRequest):
     try:
         position = data.position
         logger.info(f"接收到网格移动请求: position={position}")
@@ -1112,6 +1112,50 @@ async def download_chi_result(file: str):
     except Exception as e:
         logger.error(f"下载CHI测试结果文件失败: {e}")
         return {"error": True, "message": f"下载CHI测试结果文件失败: {e}"}
+
+# 设置CHI工作目录
+@app.post("/api/chi/set_working_directory")
+async def set_chi_working_directory(request: Dict[str, str]):
+    """设置CHI工作目录"""
+    if devices["chi"] is None or not is_chi_initialized():
+        return {"error": True, "message": "CHI工作站未初始化"}
+    
+    try:
+        working_dir = request.get("working_directory")
+        if not working_dir:
+            return {"error": True, "message": "工作目录路径不能为空"}
+        
+        # 确保目录存在
+        import os
+        os.makedirs(working_dir, exist_ok=True)
+        
+        # 更新CHI适配器的工作目录
+        devices["chi"].results_base_dir = os.path.abspath(working_dir)
+        
+        # 如果有CHI Setup实例，也更新它的文件夹路径
+        if hasattr(devices["chi"], "chi_setup") and devices["chi"].chi_setup:
+            devices["chi"].chi_setup.folder = working_dir
+        
+        logger.info(f"CHI工作目录已设置为: {working_dir}")
+        return {"error": False, "message": f"CHI工作目录已设置为: {working_dir}"}
+        
+    except Exception as e:
+        logger.error(f"设置CHI工作目录失败: {e}")
+        return {"error": True, "message": f"设置CHI工作目录失败: {e}"}
+
+# 获取CHI工作目录
+@app.get("/api/chi/get_working_directory")
+async def get_chi_working_directory():
+    """获取当前CHI工作目录"""
+    if devices["chi"] is None or not is_chi_initialized():
+        return {"error": True, "message": "CHI工作站未初始化"}
+    
+    try:
+        working_dir = devices["chi"].results_base_dir
+        return {"error": False, "working_directory": working_dir}
+    except Exception as e:
+        logger.error(f"获取CHI工作目录失败: {e}")
+        return {"error": True, "message": f"获取CHI工作目录失败: {e}"}
 
 # =========== 辅助函数 ===========
 
