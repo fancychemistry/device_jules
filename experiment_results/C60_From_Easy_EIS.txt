@@ -1,6 +1,6 @@
-May 24, 2025   12:47:40
+May 24, 2025   14:05:04
 A.C. Impedance
-File: c:\python\win\device_jules\experiment_results\{{project_name}}_eis.bin
+File: c:\python\win\device_jules\experiment_results\c60_from_easy_eis.bin
 Data Source:  Experiment
 Instrument Model:  CHI760E
 Header: CHI760E EIS

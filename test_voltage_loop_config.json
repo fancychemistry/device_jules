@@ -1,5 +1,5 @@
 {
-  "project_name": "C60_From_Easy",
+  "project_name": "C60_From_Easy_VoltageLoop_Test",
   "base_path": "experiment_results_json",
   "moonraker_addr": "http://192.168.51.168:7125",
   "log_level": "INFO",
@@ -12,7 +12,7 @@
 
   "voltage_range": [-1.2, -1.3],
   "first_experiment_position": 2,
-  "output_positions_list": null,
+  "output_positions_list": [3, 4, 5],
   "position_tolerance": 0.5,
 
   "chi_software_path": "C:\\CHI760E\\chi760e\\chi760e.exe",
@@ -59,58 +59,11 @@
       "description": "移动到安全点",
       "type": "move_printer_xyz",
       "enabled": true,
-      "skip_if_flag_true": "skip_first_sequence",
       "params": {"x_key": "safe_move_xy[0]", "y_key": "safe_move_xy[1]", "z_key": "safe_move_z_high"}
     },
     {
-      "id": "FIRST_02_MOVE_TO_INITIAL_POS",
-      "description": "移动到第一个样品位置 (用于初始表征)",
-      "type": "move_printer_grid",
-      "enabled": true,
-      "skip_if_flag_true": "skip_first_sequence",
-      "params": {"grid_num_key": "initial_char_grid_position"}
-    },
-    {
-      "id": "FIRST_03_PUMP_ELECTROLYTE",
-      "description": "泵送电解液 (初始)",
-      "type": "sequence",
-      "enabled": true,
-      "skip_if_flag_true": "skip_first_sequence",
-      "actions": [
-        {"type": "set_valve", "params": {"open_to_reservoir": true, "relay_id_key": "valve_klipper_relay_id"}},
-        {"type": "pump_liquid", "params": {"volume_ml_key": "electrolyte_volume_fill_ml", "direction": 1, "klipper_params_key": "pump_klipper_params"}},
-        {"type": "set_valve", "params": {"open_to_reservoir": false, "relay_id_key": "valve_klipper_relay_id"}}
-      ]
-    },
-    {
-      "id": "FIRST_04_INITIAL_CHI_TESTS",
-      "description": "执行初始电化学测试系列 (CV_Pre, CV_Cdl, CV, LSV, EIS)",
-      "type": "chi_sequence",
-      "enabled": true,
-      "skip_if_flag_true": "skip_first_sequence",
-      "chi_tests": [
-        {"method": "CV", "params": {"ei": 0.8, "eh": 0.8, "el": -1.4, "v": 0.2, "si": 0.01, "cl": 2, "sens": 1e-3, "fileName": "{{project_name}}_CV_Pre"}},
-        {"method": "CV", "params": {"ei": 0.8, "eh": 0.8, "el": -1.4, "v": 0.2, "si": 0.01, "cl": 2, "sens": 1e-3, "fileName": "{{project_name}}_CV_Cdl"}},
-        {"method": "CV", "params": {"ei": 0, "eh": 0, "el": -2.2, "v": 0.2, "si": 0.01, "cl": 2, "sens": 1e-1, "fileName": "{{project_name}}_CV"}},
-        {"method": "LSV", "params": {"ei": 0, "ef": -2.2, "v": 0.2, "si": 0.01, "sens": 1e-1, "fileName": "{{project_name}}_LSV"}},
-        {"method": "EIS", "params": {"ei": -1, "fl": 10, "fh": 100000, "amp": 0.01, "sens": 1e-3, "fileName": "{{project_name}}_EIS"}}
-      ]
-    },
-    {
-      "id": "FIRST_06_INITIAL_CLEANING",
-      "description": "清洗电解池 (初始阶段后)",
-      "type": "sequence",
-      "enabled": true,
-      "skip_if_flag_true": "skip_first_sequence",
-      "actions": [
-        {"type": "move_printer_grid", "params": {"grid_num_key": "waste_fluid_grid_position"}},
-        {"type": "set_valve", "params": {"open_to_reservoir": false, "relay_id_key": "valve_klipper_relay_id"}},
-        {"type": "pump_liquid", "params": {"volume_ml_key": "initial_clean_volume_ml", "direction": 0, "klipper_params_key": "pump_klipper_params"}}
-      ]
-    },
-    {
-      "id": "SUBSEQUENT_07_IT_VOLTAGE_SWEEP",
-      "description": "多电压IT扫描",
+      "id": "TEST_02_IT_VOLTAGE_SWEEP",
+      "description": "测试多电压IT扫描",
       "type": "voltage_loop",
       "enabled": true,
       "voltage_source": {"type": "config_key", "key": "voltage_range"},
@@ -136,6 +89,19 @@
           }
         },
         {
+          "id": "IT_LOOP_PROCESS_DATA",
+          "type": "process_chi_data",
+          "params": {
+            "data_type": "IT",
+            "source_file_name_in_chi_params": "{{project_name}}_IT_{{current_voltage_file_str}}V.txt",
+            "current_voltage": "{{current_voltage}}",
+            "current_output_pos": "{{current_output_position}}",
+            "loop_index": "{{loop_index}}",
+            "plot_anchor_key": "excel_report_anchors.project_it_gallery_start",
+            "central_plot_anchor_key": "excel_report_anchors.central_it_gallery_start"
+          }
+        },
+        {
           "id": "IT_LOOP_SAMPLE_AND_CLEAN",
           "type": "sequence",
           "actions": [
@@ -153,7 +119,7 @@
       ]
     },
     {
-      "id": "FINAL_08_CLEANUP_AND_HOME",
+      "id": "FINAL_03_CLEANUP_AND_HOME",
       "description": "最终清理和归位",
       "type": "sequence",
       "enabled": true,
@@ -166,4 +132,4 @@
   "experiment_flags": {
     "skip_first_sequence": false
   }
-}
+} 

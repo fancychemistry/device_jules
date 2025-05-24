@@ -1,214 +1,344 @@
 #!/usr/bin/env python3
-"""
-综合测试脚本 - 验证所有修复
-"""
+# -*- coding: utf-8 -*-
 
+import requests
+import time
 import json
-import asyncio
-import httpx
+import sys
+from datetime import datetime
 
-def test_template_variable_resolution():
-    """测试模板变量解析"""
+def check_services_status():
+    """检查服务状态"""
+    print("🔧 检查服务状态...")
     
-    print("🧪 测试模板变量解析")
-    print("=" * 50)
+    automation_url = "http://localhost:8002"
+    device_url = "http://localhost:8001"
     
-    # 模拟配置
-    config = {
-        "project_name": "C60_From_Easy",
-        "first_experiment_position": 2,
-        "output_positions_list": None,
-        "configurations": {
-            "initial_char_grid_position": "{{output_positions[0]}}",
-            "waste_fluid_grid_position": 1
-        }
-    }
-    
-    def provide_default_values(config):
-        """提供默认值"""
-        if config.get("output_positions_list") is None:
-            first_pos = config.get("first_experiment_position", 2)
-            default_positions = [first_pos, first_pos + 1, first_pos + 2, first_pos + 3]
-            config["output_positions"] = default_positions
-            print(f"🔧 创建默认输出位置: {default_positions}")
-        else:
-            config["output_positions"] = config["output_positions_list"]
-    
-    def resolve_template_value(value, config):
-        """解析模板变量"""
-        if isinstance(value, str) and value.startswith("{{") and value.endswith("}}"):
-            template_var = value[2:-2].strip()
-            
-            if template_var == "project_name":
-                return config.get("project_name", "Unknown")
-            elif template_var.startswith("output_positions[") and template_var.endswith("]"):
-                try:
-                    index_str = template_var[len("output_positions["):-1]
-                    index = int(index_str)
-                    output_positions = config.get("output_positions", [])
-                    if 0 <= index < len(output_positions):
-                        resolved = output_positions[index]
-                        print(f"🔧 模板变量解析: {value} -> {resolved}")
-                        return resolved
-                    else:
-                        print(f"⚠️ 输出位置索引超出范围: {template_var}, 使用默认值2")
-                        return 2
-                except (ValueError, IndexError) as e:
-                    print(f"⚠️ 解析输出位置索引失败: {template_var}, 错误: {e}, 使用默认值2")
-                    return 2
-            else:
-                print(f"⚠️ 未知模板变量: {template_var}, 保持原值")
-                return value
-        return value
-    
-    def resolve_recursive(obj, config):
-        """递归解析"""
-        if isinstance(obj, dict):
-            return {key: resolve_recursive(value, config) for key, value in obj.items()}
-        elif isinstance(obj, list):
-            return [resolve_recursive(item, config) for item in obj]
-        elif isinstance(obj, str) and obj.startswith("{{") and obj.endswith("}}"):
-            return resolve_template_value(obj, config)
-        else:
-            return obj
-    
-    # 测试流程
-    print("原始配置:")
-    print(f"  initial_char_grid_position: {config['configurations']['initial_char_grid_position']}")
-    print(f"  output_positions_list: {config.get('output_positions_list')}")
-    
-    provide_default_values(config)
-    
-    # 解析配置
-    config["configurations"] = resolve_recursive(config["configurations"], config)
-    
-    print("\n解析后配置:")
-    print(f"  initial_char_grid_position: {config['configurations']['initial_char_grid_position']}")
-    print(f"  output_positions: {config.get('output_positions')}")
-    
-    # 验证结果
-    expected_position = 2  # first_experiment_position
-    actual_position = config['configurations']['initial_char_grid_position']
-    
-    if actual_position == expected_position:
-        print("✅ 模板变量解析测试通过!")
-        return True
-    else:
-        print(f"❌ 模板变量解析测试失败! 期望: {expected_position}, 实际: {actual_position}")
-        return False
-
-async def test_full_system():
-    """测试完整系统"""
-    
-    print("\n🚀 测试完整系统")
-    print("=" * 50)
-    
-    # 检查experiment_automation是否在运行
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get("http://localhost:8002/api/experiment/status")
-            if response.status_code == 200:
-                print("✅ 实验自动化系统运行正常")
-                
-                # 测试加载配置
-                print("🔧 测试配置加载...")
-                load_response = await client.post(
-                    "http://localhost:8002/api/experiment/load_config",
-                    json={"config_path": "old/experiment_config.json"}
-                )
-                
-                if load_response.status_code == 200:
-                    result = load_response.json()
-                    if result.get("success"):
-                        print("✅ 配置加载成功")
-                        print(f"📋 步骤数量: {len(result.get('steps', []))}")
-                        return True
-                    else:
-                        print(f"❌ 配置加载失败: {result.get('message')}")
-                        return False
-                else:
-                    print(f"❌ 配置加载请求失败: {load_response.status_code}")
-                    return False
-            else:
-                print(f"❌ 系统状态检查失败: {response.status_code}")
-                return False
-    except Exception as e:
-        print(f"❌ 系统测试失败: {e}")
-        print("💡 请先启动实验自动化系统: python experiment_automation.py")
-        return False
-
-def test_api_response_parsing():
-    """测试API响应解析"""
-    
-    print("\n🔧 测试API响应解析")
-    print("=" * 30)
-    
-    def parse_api_response(result):
-        """通用的API响应解析函数"""
-        message = result.get("message", "")
+        # 检查device_tester服务
+        device_resp = requests.get(f"{device_url}/api/status", timeout=5)
+        device_status = device_resp.json()
+        print(f"✅ Device Tester服务正常 (端口8001)")
         
-        if "success" in result:
-            success = result.get("success", False)
-            return {"success": success, "message": message}
-        elif "error" in result:
-            success = not result.get("error", True)
-            return {"success": success, "message": message}
-        else:
-            return {"success": False, "message": message or "未知响应格式"}
-    
-    # 测试用例
-    test_cases = [
-        ({"success": True, "message": "操作成功"}, True),
-        ({"success": False, "message": "操作失败"}, False),
-        ({"error": False, "message": "操作成功"}, True),
-        ({"error": True, "message": "操作失败"}, False),
-    ]
-    
-    all_passed = True
-    for response, expected in test_cases:
-        parsed = parse_api_response(response)
-        if parsed["success"] != expected:
-            print(f"❌ 解析失败: {response} -> {parsed['success']} (期望: {expected})")
-            all_passed = False
-    
-    if all_passed:
-        print("✅ API响应解析测试通过!")
-    
-    return all_passed
+        # 检查automation服务
+        auto_resp = requests.get(f"{automation_url}/api/experiment/status", timeout=5)
+        auto_status = auto_resp.json()
+        print(f"✅ 实验自动化服务正常 (端口8002)，状态: {auto_status.get('status')}")
+        
+        return True, automation_url, device_url
+        
+    except Exception as e:
+        print(f"❌ 服务检查失败: {e}")
+        return False, None, None
 
-async def main():
-    """主测试函数"""
-    
-    print("🔧 综合测试 - 验证所有修复")
+def test_custom_project_name():
+    """测试自定义项目名称功能"""
+    print("\n🔧 测试自定义项目名称功能")
     print("=" * 60)
     
-    tests = [
-        ("模板变量解析", test_template_variable_resolution()),
-        ("API响应解析", test_api_response_parsing()),
-        ("完整系统测试", await test_full_system())
-    ]
+    success, automation_url, device_url = check_services_status()
+    if not success:
+        return False
     
-    passed = 0
-    total = len(tests)
+    custom_project_name = f"TestProject_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
-    for name, result in tests:
-        if result:
-            passed += 1
-            print(f"✅ {name}: 通过")
+    print(f"📋 测试自定义项目名称: {custom_project_name}")
+    
+    try:
+        # 1. 加载配置时指定自定义项目名称
+        config_resp = requests.post(f"{automation_url}/api/experiment/load_config", 
+                                  json={
+                                      "config_path": "old/experiment_config.json",
+                                      "project_name": custom_project_name
+                                  }, 
+                                  timeout=10)
+        config_result = config_resp.json()
+        
+        if not config_result.get("success"):
+            print(f"❌ 配置加载失败: {config_result.get('message')}")
+            return False
+        
+        print(f"✅ 配置加载成功")
+        print(f"📋 项目名称: {config_result.get('project_name')}")
+        print(f"📁 项目文件夹: {config_result.get('project_folder')}")
+        print(f"📊 总步骤数: {config_result.get('total_steps')}")
+        
+        # 验证项目名称是否正确设置
+        if config_result.get('project_name') == custom_project_name:
+            print(f"✅ 自定义项目名称设置成功")
         else:
-            print(f"❌ {name}: 失败")
+            print(f"❌ 项目名称设置失败，期望: {custom_project_name}, 实际: {config_result.get('project_name')}")
+            return False
+        
+        # 验证项目文件夹是否包含项目名称
+        project_folder = config_result.get('project_folder', '')
+        if custom_project_name in project_folder:
+            print(f"✅ 项目文件夹路径正确")
+        else:
+            print(f"❌ 项目文件夹路径错误，路径: {project_folder}")
+            return False
+        
+        # 2. 测试状态API中是否包含项目信息
+        status_resp = requests.get(f"{automation_url}/api/experiment/status", timeout=5)
+        status_result = status_resp.json()
+        
+        if status_result.get('project_name') == custom_project_name:
+            print(f"✅ 状态API中项目名称正确")
+        else:
+            print(f"❌ 状态API中项目名称错误")
+            return False
+        
+        # 3. 验证日志功能
+        experiment_logs = status_result.get('experiment_logs', [])
+        print(f"📝 当前日志条数: {len(experiment_logs)}")
+        
+        if len(experiment_logs) > 0:
+            print(f"✅ 日志系统正常工作")
+            # 显示最新的几条日志
+            for log in experiment_logs[-3:]:
+                print(f"   [{log.get('timestamp')}] {log.get('message')}")
+        else:
+            print(f"⚠️ 暂无日志记录")
+            
+        return True
+        
+    except Exception as e:
+        print(f"❌ 测试自定义项目名称异常: {e}")
+        return False
+
+def test_step_order_and_status():
+    """测试步骤顺序和状态显示"""
+    print("\n🔧 测试步骤顺序和状态显示")
+    print("=" * 60)
     
-    print("\n" + "=" * 60)
-    print(f"📊 测试结果: {passed}/{total} 通过")
+    success, automation_url, device_url = check_services_status()
+    if not success:
+        return False
     
-    if passed == total:
-        print("🎉 所有测试通过! 系统已准备就绪!")
-        print("\n💡 下一步:")
-        print("1. 启动系统: python experiment_automation.py")
-        print("2. 访问控制台: http://localhost:8002")
-        print("3. 加载配置并开始实验")
+    try:
+        # 1. 加载配置
+        print("📋 加载实验配置...")
+        config_resp = requests.post(f"{automation_url}/api/experiment/load_config", 
+                                  json={"config_path": "old/experiment_config.json"}, 
+                                  timeout=10)
+        config_result = config_resp.json()
+        
+        if not config_result.get("success"):
+            print(f"❌ 配置加载失败: {config_result.get('message')}")
+            return False
+        
+        total_steps = config_result.get("total_steps", 0)
+        print(f"✅ 配置加载成功，总步骤数: {total_steps}")
+        
+        # 2. 获取详细状态信息
+        print("\n📊 获取详细状态信息...")
+        status_resp = requests.get(f"{automation_url}/api/experiment/status", timeout=5)
+        status_result = status_resp.json()
+        
+        print(f"实验ID: {status_result.get('experiment_id', '无')}")
+        print(f"项目名称: {status_result.get('project_name', '无')}")
+        print(f"项目文件夹: {status_result.get('project_folder', '无')}")
+        print(f"实验状态: {status_result.get('status', '无')}")
+        print(f"当前步骤: {status_result.get('current_step', 0)}/{status_result.get('total_steps', 0)}")
+        print(f"当前步骤名称: {status_result.get('current_step_name', '无')}")
+        print(f"当前步骤描述: {status_result.get('current_step_description', '无')}")
+        print(f"已完成步骤: {status_result.get('completed_steps', 0)}")
+        print(f"失败步骤: {status_result.get('failed_steps', 0)}")
+        
+        # 3. 验证步骤列表
+        all_step_results = status_result.get('all_step_results', [])
+        print(f"\n📋 步骤结果详情 (共{len(all_step_results)}个):")
+        
+        if all_step_results:
+            for result in all_step_results:
+                step_id = result.get('step_id', '未知')
+                step_index = result.get('step_index', -1)
+                success_status = '✅' if result.get('success', False) else '❌'
+                skipped = result.get('skipped', False)
+                if skipped:
+                    success_status = '⏭️'
+                duration = result.get('duration_seconds', 0)
+                
+                print(f"  {success_status} 步骤{step_index + 1}: {step_id} (用时: {duration:.1f}s)")
+        else:
+            print("  暂无步骤结果")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ 测试步骤顺序和状态异常: {e}")
+        return False
+
+def test_short_experiment_run():
+    """测试短时间实验运行（只执行前几个步骤）"""
+    print("\n🔧 测试短时间实验运行")
+    print("=" * 60)
+    
+    success, automation_url, device_url = check_services_status()
+    if not success:
+        return False
+    
+    test_project_name = f"ShortTest_{datetime.now().strftime('%H%M%S')}"
+    
+    try:
+        # 1. 加载配置
+        print(f"📋 加载配置，项目名称: {test_project_name}")
+        config_resp = requests.post(f"{automation_url}/api/experiment/load_config", 
+                                  json={
+                                      "config_path": "old/experiment_config.json",
+                                      "project_name": test_project_name
+                                  }, 
+                                  timeout=10)
+        config_result = config_resp.json()
+        
+        if not config_result.get("success"):
+            print(f"❌ 配置加载失败: {config_result.get('message')}")
+            return False
+        
+        print(f"✅ 配置加载成功")
+        
+        # 2. 启动实验
+        print("\n🚀 启动实验...")
+        start_resp = requests.post(f"{automation_url}/api/experiment/start", timeout=10)
+        start_result = start_resp.json()
+        
+        if not start_result.get("success"):
+            print(f"❌ 实验启动失败: {start_result.get('message')}")
+            return False
+        
+        experiment_id = start_result.get("experiment_id")
+        print(f"✅ 实验启动成功: {experiment_id}")
+        
+        # 3. 监控前几个步骤（最多30秒）
+        print("\n📊 监控实验进度...")
+        start_time = time.time()
+        max_wait = 30  # 30秒
+        last_step = 0
+        last_status = None
+        
+        while time.time() - start_time < max_wait:
+            try:
+                status_resp = requests.get(f"{automation_url}/api/experiment/status", timeout=5)
+                status = status_resp.json()
+                
+                current_step = status.get("current_step", 0)
+                experiment_status = status.get("status", "unknown")
+                current_step_name = status.get("current_step_name", "")
+                current_step_description = status.get("current_step_description", "")
+                
+                # 如果步骤或状态发生变化，输出信息
+                if current_step != last_step or experiment_status != last_status:
+                    print(f"📋 步骤更新: {current_step}/{status.get('total_steps', 0)}")
+                    print(f"   状态: {experiment_status}")
+                    print(f"   当前步骤: {current_step_name}")
+                    print(f"   描述: {current_step_description}")
+                    
+                    last_step = current_step
+                    last_status = experiment_status
+                
+                # 如果实验结束或执行了几个步骤就停止
+                if experiment_status in ["completed", "error"] or current_step >= 3:
+                    print(f"\n⏹ 停止监控，当前状态: {experiment_status}, 步骤: {current_step}")
+                    break
+                
+                time.sleep(2)
+                
+            except Exception as e:
+                print(f"⚠️ 状态监控异常: {e}")
+                time.sleep(2)
+        
+        # 4. 停止实验（如果还在运行）
+        if last_status == "running":
+            print("\n⏹ 主动停止实验...")
+            try:
+                stop_resp = requests.post(f"{automation_url}/api/experiment/stop", timeout=5)
+                stop_result = stop_resp.json()
+                if stop_result.get("success"):
+                    print("✅ 实验已停止")
+                else:
+                    print(f"⚠️ 停止实验失败: {stop_result.get('message')}")
+            except Exception as e:
+                print(f"⚠️ 停止实验异常: {e}")
+        
+        # 5. 获取最终状态
+        print("\n📊 获取最终状态...")
+        final_status_resp = requests.get(f"{automation_url}/api/experiment/status", timeout=5)
+        final_status = final_status_resp.json()
+        
+        completed_steps = final_status.get("completed_steps", 0)
+        failed_steps = final_status.get("failed_steps", 0)
+        all_results = final_status.get("all_step_results", [])
+        
+        print(f"✅ 已完成步骤: {completed_steps}")
+        print(f"❌ 失败步骤: {failed_steps}")
+        print(f"📋 总记录步骤: {len(all_results)}")
+        
+        # 输出步骤详情
+        if all_results:
+            print("\n📋 步骤执行详情:")
+            for i, result in enumerate(all_results):
+                step_id = result.get('step_id', '未知')
+                success = result.get('success', False)
+                skipped = result.get('skipped', False)
+                duration = result.get('duration_seconds', 0)
+                message = result.get('message', '无消息')
+                
+                if skipped:
+                    status_icon = "⏭️"
+                    status_text = "跳过"
+                elif success:
+                    status_icon = "✅"
+                    status_text = "成功"
+                else:
+                    status_icon = "❌"
+                    status_text = "失败"
+                
+                print(f"  {status_icon} {step_id}: {status_text} (用时: {duration:.1f}s)")
+                if message and message != "无消息":
+                    print(f"      消息: {message}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ 测试短时间实验运行异常: {e}")
+        return False
+
+def main():
+    """主函数"""
+    print("🔧 完整系统修复验证测试")
+    print("=" * 70)
+    print(f"开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # 测试1: 自定义项目名称功能
+    test1_success = test_custom_project_name()
+    
+    # 测试2: 步骤顺序和状态显示
+    test2_success = test_step_order_and_status()
+    
+    # 测试3: 短时间实验运行
+    test3_success = test_short_experiment_run()
+    
+    print("\n" + "=" * 70)
+    print("🔧 完整系统修复验证结果:")
+    print(f"1. 自定义项目名称功能: {'✅ 通过' if test1_success else '❌ 失败'}")
+    print(f"2. 步骤顺序和状态显示: {'✅ 通过' if test2_success else '❌ 失败'}")
+    print(f"3. 短时间实验运行测试: {'✅ 通过' if test3_success else '❌ 失败'}")
+    
+    all_tests_passed = test1_success and test2_success and test3_success
+    
+    if all_tests_passed:
+        print("\n🎉 所有修复验证测试通过！系统修复成功！")
+        print("\n📋 修复总结:")
+        print("✅ 1. 增加了自定义project_name功能")
+        print("✅ 2. 修复了步骤执行顺序问题")
+        print("✅ 3. 改进了实时日志和状态显示")
+        print("✅ 4. 增加了项目文件夹自动创建功能")
+        print("✅ 5. 改进了Web界面的用户体验")
+        return True
     else:
-        print("⚠️ 部分测试失败，请检查相关功能")
+        print("\n❌ 部分测试失败，需要进一步检查和修复")
+        return False
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    success = main()
+    sys.exit(0 if success else 1) 

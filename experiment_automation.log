@@ -42,3 +42,6 @@ h11._util.LocalProtocolError: can't handle event type Response when role=SERVER 
 2025-05-24 12:31:30,953 - experiment_automation - WARNING - 未知动作类型: printer_home
 2025-05-24 12:38:00,538 - experiment_automation - WARNING - 未知动作类型: printer_home
 2025-05-24 12:49:15,828 - experiment_automation - WARNING - 未知动作类型: printer_home
+2025-05-24 13:01:57,302 - experiment_automation - WARNING - 未知动作类型: printer_home
+2025-05-24 13:05:48,147 - experiment_automation - WARNING - 未知动作类型: printer_home
+2025-05-24 14:11:17,964 - experiment_automation - ERROR - 电压循环步骤失败: IT_LOOP_PUMP_FRESH_ELECTROLYTE, 电压=-1.3V

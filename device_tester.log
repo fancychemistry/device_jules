@@ -1886,3 +1886,18 @@ NameError: name 'printer_adapter' is not defined. Did you mean: 'PrinterAdapter'
 2025-05-24 12:18:06,836 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
 2025-05-24 12:32:12,640 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
 2025-05-24 12:39:51,110 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 12:56:14,230 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 13:05:00,493 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 13:20:42,908 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 13:28:13,501 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 13:45:54,129 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 13:50:43,691 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 14:11:17,952 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
+2025-05-24 14:11:17,962 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
+2025-05-24 14:12:45,309 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 14:42:00,025 - device_tester - WARNING - WebSocket监听器任务正常结束（不应该发生）
+2025-05-24 14:42:17,169 - device_tester - WARNING - 关闭之前的CHI实例时出错: 'CHIAdapter' object has no attribute 'close'
+2025-05-24 14:53:13,697 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
+2025-05-24 14:53:13,698 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
+2025-05-24 14:58:23,769 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
+2025-05-24 14:58:23,769 - device_tester - ERROR - 切换继电器失败: HTTPConnectionPool(host='192.168.51.168', port=7125): Read timed out. (read timeout=30)
