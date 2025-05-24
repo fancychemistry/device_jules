@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 import socket
 
@@ -48,7 +48,7 @@ from backend.services.adapters.chi_adapter import CHIAdapter
 
 # 配置日志
 logging.basicConfig(
-    level=logging.WARNING,  # 从INFO改为WARNING，减少调试信息
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler("device_tester.log"),
@@ -155,9 +155,6 @@ class ITAPIParams(BaseModel):
     si: float  # 采样间隔
     sens: Optional[float] = 1e-5  # 灵敏度
     file_name: Optional[str] = None  # 文件名
-
-class GridMoveRequest(BaseModel):
-    position: int
 
 # Pydantic Models for Printer Info API
 class GeneralLimits(BaseModel):
@@ -399,36 +396,18 @@ async def move_printer(position: Dict[str, float]):
 
 # 移动到网格位置
 @app.post("/api/printer/grid")
-async def move_to_grid(data: GridMoveRequest): # 使用Pydantic模型进行类型验证
+async def move_to_grid(data: Dict[str, int]):
+    if devices["printer"] is None or not devices["printer"].initialized:
+        return {"error": True, "message": "打印机未初始化"}
+    
     try:
-        position = data.position
-        logger.info(f"接收到网格移动请求: position={position}")
+        position = data.get("position", 1)
         
-        if devices["printer"] is None or not devices["printer"].initialized:
-            logger.error("打印机适配器未初始化")
-            return JSONResponse(content={"success": False, "message": "打印机未初始化"}, status_code=400)
-        
-        # 确保position是整数
-        if not isinstance(position, int):
-            logger.error(f"无效的网格位置类型: {type(position)}, 需要整数")
-            return JSONResponse(content={"success": False, "message": f"无效的网格位置类型: {type(position)}"}, status_code=422)
-
-        success = await devices["printer"].move_to_grid(position)
-        
-        if success:
-            logger.info(f"成功移动到网格 {position}")
-            return {"success": True, "message": f"成功移动到网格 {position}"}
-        else:
-            # 如果move_to_grid返回False，可能是内部逻辑问题或安全限制
-            logger.error(f"打印机适配器未能移动到网格 {position}")
-            return JSONResponse(content={"success": False, "message": f"未能移动到网格 {position}"}, status_code=500) 
-            
-    except ValueError as ve:
-        logger.error(f"网格移动请求值错误: {ve}")
-        return JSONResponse(content={"success": False, "message": str(ve)}, status_code=400)
+        await devices["printer"].move_to_grid(position)
+        return {"error": False, "message": f"打印机正在移动到网格位置 {position}"}
     except Exception as e:
-        logger.error(f"网格移动时发生意外错误: {e}", exc_info=True) # 添加exc_info=True记录完整堆栈
-        return JSONResponse(content={"success": False, "message": f"服务器内部错误: {e}"}, status_code=500)
+        logger.error(f"移动到网格位置失败: {e}")
+        return {"error": True, "message": f"移动到网格位置失败: {e}"}
 
 # 归位打印机
 @app.post("/api/printer/home")
@@ -696,14 +675,9 @@ async def initialize_chi():
     
     # 如果已经初始化，先关闭之前的实例
     if devices["chi"] is not None:
-        try:
-            await devices["chi"].close()
-        except Exception as e:
-            logger.warning(f"关闭之前的CHI实例时出错: {e}")
+        await devices["chi"].close()
     
     try:
-        logger.info("开始初始化CHI工作站...")
-        
         # 修改：使用从backend.services.adapters.chi_adapter导入的CHIAdapter类
         # 并确保参数符合backend.services.adapters.chi_adapter.CHIAdapter的__init__方法
         devices["chi"] = CHIAdapter(
@@ -711,23 +685,10 @@ async def initialize_chi():
             results_base_dir=config["results_dir"],  # 注意：改为results_base_dir（与导入的CHIAdapter参数名一致）
             chi_path=config["chi_path"]
         )
-        logger.info("CHIAdapter实例创建成功")
-        
-        # 调用初始化方法
-        result = await devices["chi"].initialize()
-        logger.info(f"CHI初始化方法返回: {result}")
-        
-        if result:
-            logger.info("CHI工作站初始化成功")
-            return {"error": False, "message": "CHI工作站已初始化"}
-        else:
-            error_msg = getattr(devices["chi"], '_last_error', '未知错误')
-            logger.error(f"CHI工作站初始化失败: {error_msg}")
-            devices["chi"] = None
-            return {"error": True, "message": f"CHI工作站初始化失败: {error_msg}"}
+        await devices["chi"].initialize()
+        return {"error": False, "message": "CHI工作站已初始化"}
     except Exception as e:
-        logger.error(f"初始化CHI工作站时发生异常: {e}", exc_info=True)
-        devices["chi"] = None
+        logger.error(f"初始化CHI工作站失败: {e}")
         return {"error": True, "message": f"初始化CHI工作站失败: {e}"}
 
 # 运行CV测试

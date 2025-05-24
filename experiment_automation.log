@@ -1,0 +1,5 @@
+2025-05-23 22:44:55,780 - experiment_automation - INFO - 实验配置加载成功，共 9 个步骤
+2025-05-23 22:44:58,445 - experiment_automation - INFO - 实验开始: exp_20250523_224458
+2025-05-23 22:44:58,446 - experiment_automation - INFO - 执行步骤 1/9: INIT_00_HOME_PRINTER
+2025-05-23 22:44:59,489 - httpx - INFO - HTTP Request: POST http://localhost:8001/api/printer/home "HTTP/1.1 200 OK"
+2025-05-23 22:44:59,494 - experiment_automation - ERROR - 步骤 INIT_00_HOME_PRINTER 执行失败: 打印机归位成功
